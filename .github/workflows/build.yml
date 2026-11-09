@@ -69,7 +69,7 @@ jobs:
       - name: Build APKs
         working-directory: mobile
         run: flutter build apk --release --split-per-abi --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: BeatMaker-Android
           path: mobile/build/app/outputs/flutter-apk/*.apk
@@ -101,7 +101,7 @@ jobs:
         run: |
           flutter build ios --release --no-codesign --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
           cd build/ios/iphoneos && zip -qr ../../BeatMaker-iOS-unsigned.zip Runner.app
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: BeatMaker-iOS-unsigned
           path: mobile/build/BeatMaker-iOS-unsigned.zip
@@ -133,7 +133,7 @@ jobs:
       - run: bash tool/prepare_python.sh Windows
       - working-directory: mobile
         run: flutter build windows --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: BeatMaker-Windows
           path: mobile/build/windows/x64/runner/Release/
@@ -164,7 +164,7 @@ jobs:
         run: |
           flutter build macos --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
           cd build/macos/Build/Products/Release && zip -qr ../../../../BeatMaker-macOS.zip *.app
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: BeatMaker-macOS
           path: mobile/build/BeatMaker-macOS.zip
@@ -194,7 +194,7 @@ jobs:
       - run: bash tool/prepare_python.sh Linux
       - working-directory: mobile
         run: flutter build linux --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v6
         with:
           name: BeatMaker-Linux
           path: mobile/build/linux/x64/release/bundle/
