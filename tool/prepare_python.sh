@@ -11,8 +11,13 @@ cp -r "$ROOT/beatengine" "$SRC/"
 cp "$ROOT/server.py" "$SRC/"
 find "$SRC" -name "__pycache__" -prune -exec rm -rf {} +
 
-REQS="$(grep -vE '^\s*(#|$)' "$SRC/requirements.txt" | paste -sd, -)"
+# serious_python takes one -r per requirement (it does not split on commas)
+REQ_ARGS=()
+while IFS= read -r line; do
+  line="${line%%#*}"; line="$(echo "$line" | xargs)"
+  if [ -n "$line" ]; then REQ_ARGS+=(-r "$line"); fi
+done < "$SRC/requirements.txt"
 cd "$ROOT/mobile"
-echo "Packaging engine for $PLATFORM with: $REQS"
-dart run serious_python:main package python --platform "$PLATFORM" --requirements "$REQS"
+echo "Packaging engine for $PLATFORM with: ${REQ_ARGS[*]}"
+dart run serious_python:main package python --platform "$PLATFORM" "${REQ_ARGS[@]}"
 ls -la app/
