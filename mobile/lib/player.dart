@@ -24,16 +24,37 @@ class _PlayerBarState extends State<PlayerBar> {
   @override
   void initState() {
     super.initState();
-    _subs.add(_p.onPositionChanged.listen((d) => setState(() => _pos = d)));
-    _subs.add(_p.onDurationChanged.listen((d) => setState(() => _dur = d)));
-    _subs.add(_p.onPlayerStateChanged.listen((s) => setState(() => _playing = s == PlayerState.playing)));
-    _subs.add(_p.onPlayerComplete.listen((_) => setState(() => _pos = Duration.zero)));
+    // keep the track loaded when it ends (the default releases it), so it rewinds and replays
+    _p.setReleaseMode(ReleaseMode.stop);
+    _subs.add(_p.onPositionChanged.listen((d) {
+      if (mounted && _playing) setState(() => _pos = d); // ignore late ticks after it stops
+    }));
+    _subs.add(_p.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _dur = d);
+    }));
+    _subs.add(_p.onPlayerStateChanged.listen((s) {
+      if (mounted) setState(() => _playing = s == PlayerState.playing);
+    }));
+    _subs.add(_p.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _playing = false;
+          _pos = Duration.zero;
+        });
+      }
+    }));
     _load();
   }
 
   Future<void> _load() async {
-    await _p.setSource(DeviceFileSource(widget.path));
-    if (widget.autoplay) await _p.resume();
+    try {
+      await _p.setSource(DeviceFileSource(widget.path));
+      final d = await _p.getDuration(); // show the length before playing
+      if (mounted && d != null) setState(() => _dur = d);
+      if (widget.autoplay) await _p.resume();
+    } catch (_) {
+      // a missing or unreadable file: leave the bar at 0:00 rather than crash
+    }
   }
 
   @override
@@ -70,7 +91,11 @@ class _PlayerBarState extends State<PlayerBar> {
         child: Slider(
           value: _pos.inMilliseconds.clamp(0, max.toInt()).toDouble(),
           max: max,
-          onChanged: (v) => _p.seek(Duration(milliseconds: v.toInt())),
+          onChanged: (v) {
+          final d = Duration(milliseconds: v.toInt());
+          setState(() => _pos = d);
+          _p.seek(d);
+        },
         ),
       ),
       Text('${_t(_pos)} / ${_t(_dur)}', style: const TextStyle(color: kDim, fontSize: 12)),

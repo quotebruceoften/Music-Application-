@@ -131,6 +131,7 @@ class _HomeState extends State<Home> {
         selectedIndex: tab,
         onDestinationSelected: (i) {
           if (i == 1) st.loadBeats(); // refresh the library when opening it
+          if (i == 3) st.refreshTags();
           st.goTab(i);
         },
         destinations: const [

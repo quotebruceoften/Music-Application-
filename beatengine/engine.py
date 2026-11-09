@@ -197,6 +197,10 @@ def extend_arrangement(arr, bpm, minutes):
     cycle = 0
     while True:
         part = [[n, b, cycle] for n, b in body]
+        # a body that starts the way it ends (hook ... hook) would play the same section
+        # twice in a row at every repeat; later passes skip that first section
+        if out and len(part) > 1 and out[-1][0] == part[0][0]:
+            part = part[1:]
         if cycle % 2 == 1 and not has_break:
             part.insert(len(part) // 2, ["break", 8, cycle])
         added = False

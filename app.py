@@ -16,22 +16,35 @@ from beatengine import theory
 from beatengine.presets import DRUMS, SECTION_TYPES, TRACKS
 
 BASE = os.path.dirname(os.path.abspath(__file__))
-RENDERS = os.path.join(BASE, "renders", "web")
-REFS = os.path.join(BASE, "renders", "refs")
-TAGS = os.path.join(BASE, "renders", "tags")
-KEEP = 20
+# The web app shares the phone engine's server code: background jobs with progress and
+# stop, the beats library (names, stars, cleanup) and stems on demand. Same data folder.
+os.environ.setdefault("BEATMAKER_DATA", os.path.join(BASE, "renders"))
+import server as core  # noqa: E402
+
+for _d in (core.RENDERS, core.REFS, core.TAGS, core.TMP):
+    os.makedirs(_d, exist_ok=True)
+OLD_RENDERS = os.path.join(BASE, "renders", "web")  # beats made by older versions
+REFS = core.REFS
+TAGS = core.TAGS
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB uploads
 lock = threading.Lock()
 
+FILE_KEYS = ("wav", "mp3", "m4a", "midi", "stems", "video")
 
-def _cleanup():
-    if not os.path.isdir(RENDERS):
-        return
-    dirs = sorted((os.path.join(RENDERS, d) for d in os.listdir(RENDERS)), key=os.path.getmtime)
-    for d in dirs[:-KEEP]:
-        shutil.rmtree(d, ignore_errors=True)
+
+def _web(d):
+    """Engine results hold file paths; the page needs links."""
+    if not isinstance(d, dict):
+        return d
+    out = dict(d)
+    bid = out.get("id") or os.path.basename(str(out.get("folder") or ""))
+    for k in FILE_KEYS:
+        p = out.get(k)
+        out[k] = f"/beats/{bid}/{os.path.basename(p)}" if p else None
+    out.pop("folder", None)
+    return out
 
 
 @app.get("/")
@@ -66,21 +79,82 @@ def do_sanitize():
 
 @app.post("/api/render")
 def do_render():
+    """Start making a beat in the background; poll /api/job/<id> for progress."""
     settings = request.get_json(force=True, silent=True) or {}
-    job = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
-    out = os.path.join(RENDERS, job)
-    tag_id = os.path.basename(str((settings.get("tag") or {}).get("id") or ""))
-    tag_path = os.path.join(TAGS, tag_id, "tag.wav") if tag_id else None
-    with lock:  # one render at a time keeps a small PC responsive
-        result = render(settings, out, tag_path=tag_path)
-    _cleanup()
-    url = lambda p: f"/renders/{job}/{os.path.basename(p)}" if p else None
-    return jsonify({
-        "duration": result["duration"], "lufs": result["lufs"], "peak_db": result["peak_db"],
-        "mp3": url(result["mp3"]), "wav": url(result["wav"]), "midi": url(result["midi"]),
-        "stems": url(result["stems"]), "video": url(result.get("video")),
-        "settings": result["settings"], "arrangement": result.get("arrangement"),
-    })
+    job = core.start_job(core.do_render, settings)  # stems are made on demand, like the phone app
+    return jsonify({"id": job["id"]})
+
+
+@app.get("/api/job/<jid>")
+def job_status(jid):
+    job = core.jobs.get(jid)
+    if not job:
+        return jsonify({"error": "Unknown job"}), 404
+    j = {k: v for k, v in job.items() if k != "cancel"}
+    j["result"] = _web(job.get("result"))
+    return jsonify(j)
+
+
+@app.post("/api/job/cancel")
+def job_cancel():
+    job = core.jobs.get(str((request.get_json(force=True, silent=True) or {}).get("id")))
+    if job and job["status"] in ("queued", "running"):
+        job["cancel"] = True
+        job["message"] = "Stopping…"
+    return jsonify({"ok": True})
+
+
+@app.get("/api/beats/list")
+def beats_list():
+    return jsonify({"beats": [_web(b) for b in core.list_beats()]})
+
+
+@app.post("/api/beats/update")
+def beats_update():
+    b = request.get_json(force=True, silent=True) or {}
+    folder = core._beat_folder(b.get("id"))
+    if not folder:
+        return jsonify({"error": "That beat is gone."}), 404
+    meta = core._beat_meta(folder)
+    if "name" in b:
+        meta["name"] = str(b.get("name") or "").strip()[:60]
+    if "starred" in b:
+        meta["starred"] = bool(b.get("starred"))
+    meta.setdefault("created", os.path.getmtime(folder))
+    core._write_beat_meta(folder, meta)
+    return jsonify(_web(core._beat_info(folder)))
+
+
+@app.post("/api/beats/delete")
+def beats_delete():
+    folder = core._beat_folder((request.get_json(force=True, silent=True) or {}).get("id"))
+    if folder:
+        shutil.rmtree(folder, ignore_errors=True)
+    return jsonify({"ok": True})
+
+
+@app.post("/api/beats/stems")
+def beats_stems():
+    job = core.start_job(core.do_stems, (request.get_json(force=True, silent=True) or {}).get("id"))
+    return jsonify({"id": job["id"]})
+
+
+@app.get("/api/beats/<bid>/settings")
+def beat_settings(bid):
+    folder = core._beat_folder(bid)
+    if not folder:
+        abort(404)
+    with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
+        return jsonify(json.load(f))
+
+
+@app.get("/beats/<bid>/<name>")
+def beat_file(bid, name):
+    folder = core._beat_folder(bid)
+    name = os.path.basename(name)
+    if not folder or not os.path.exists(os.path.join(folder, name)):
+        abort(404)
+    return send_from_directory(folder, name, as_attachment=not name.endswith((".mp3", ".mp4", ".wav", ".m4a")))
 
 
 # ---------------------------------------------------------------- producer tags
@@ -191,8 +265,8 @@ def inspire_apply():
 
 
 @app.get("/renders/<job>/<name>")
-def files(job, name):
-    folder = os.path.join(RENDERS, os.path.basename(job))
+def files(job, name):  # links to beats made by older versions
+    folder = os.path.join(OLD_RENDERS, os.path.basename(job))
     if not os.path.isdir(folder):
         abort(404)
     return send_from_directory(folder, os.path.basename(name), as_attachment=not name.endswith((".mp3", ".mp4")))

@@ -127,7 +127,9 @@ def mac_podfile(s):
 
 
 def ensure_podfile(rel, template_name):
-    """flutter create doesn't always write a Podfile; start from Flutter's own template."""
+    """Not used: Flutter builds iOS/macOS with Swift Package Manager when every plugin
+    supports it (ours do), and creating a Podfile would force CocoaPods and break that.
+    Kept for projects that must stay on CocoaPods."""
     if (M / rel).exists() or not (M / rel).parent.exists():
         return
     flutter = shutil.which("flutter")
@@ -144,7 +146,6 @@ def deployment_target(key, version):
 
 
 edit("ios/Runner/Info.plist", info_plist)
-ensure_podfile("ios/Podfile", "Podfile-ios")
 edit("ios/Podfile", podfile)
 edit("ios/Runner.xcodeproj/project.pbxproj", deployment_target("IPHONEOS_DEPLOYMENT_TARGET", IOS_MIN))
 
@@ -160,7 +161,6 @@ def entitlements(s):
     return s
 
 
-ensure_podfile("macos/Podfile", "Podfile-macos")
 edit("macos/Podfile", mac_podfile)
 edit("macos/Runner.xcodeproj/project.pbxproj", deployment_target("MACOSX_DEPLOYMENT_TARGET", MACOS_MIN))
 edit("macos/Runner/DebugProfile.entitlements", entitlements)

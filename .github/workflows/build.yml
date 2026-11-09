@@ -42,12 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: subosito/flutter-action@v2
@@ -69,7 +69,7 @@ jobs:
       - name: Build APKs
         working-directory: mobile
         run: flutter build apk --release --split-per-abi --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BeatMaker-Android
           path: mobile/build/app/outputs/flutter-apk/*.apk
@@ -80,8 +80,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: subosito/flutter-action@v2
@@ -101,7 +101,7 @@ jobs:
         run: |
           flutter build ios --release --no-codesign --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
           cd build/ios/iphoneos && zip -qr ../../BeatMaker-iOS-unsigned.zip Runner.app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BeatMaker-iOS-unsigned
           path: mobile/build/BeatMaker-iOS-unsigned.zip
@@ -115,8 +115,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: subosito/flutter-action@v2
@@ -133,7 +133,7 @@ jobs:
       - run: bash tool/prepare_python.sh Windows
       - working-directory: mobile
         run: flutter build windows --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BeatMaker-Windows
           path: mobile/build/windows/x64/runner/Release/
@@ -144,8 +144,8 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: subosito/flutter-action@v2
@@ -164,7 +164,7 @@ jobs:
         run: |
           flutter build macos --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
           cd build/macos/Build/Products/Release && zip -qr ../../../../BeatMaker-macOS.zip *.app
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BeatMaker-macOS
           path: mobile/build/BeatMaker-macOS.zip
@@ -175,8 +175,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev
@@ -194,7 +194,7 @@ jobs:
       - run: bash tool/prepare_python.sh Linux
       - working-directory: mobile
         run: flutter build linux --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: BeatMaker-Linux
           path: mobile/build/linux/x64/release/bundle/

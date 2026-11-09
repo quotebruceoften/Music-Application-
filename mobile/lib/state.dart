@@ -670,6 +670,11 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshTags() async {
+    await loadTags();
+    notifyListeners();
+  }
+
   J? get activeTag {
     final id = sub('tag')['id'];
     for (final t in savedTags) {

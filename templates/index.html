@@ -79,10 +79,31 @@
   #out video{max-height:420px;background:#000}
   .or{color:var(--dim);font-size:13px;margin:12px 0 4px}
   .rec.on{background:var(--acc2);color:#fff;border-color:var(--acc2)}
+  #topbar{position:fixed;top:10px;right:14px;z-index:20}
+  #undoBtn{display:none}
+  #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#ece3d6;color:#1a0d00;padding:11px 16px;border-radius:10px;font-weight:600;display:none;z-index:30;max-width:92vw;box-shadow:0 6px 24px #0008}
+  #toast button{margin-left:14px;background:none;border:0;color:#8a4b00;font-weight:800;cursor:pointer;font:inherit}
+  .prog{margin-top:14px}
+  .prog .top{display:flex;justify-content:space-between;font-weight:600}
+  .prog .top small{color:var(--dim);font-weight:500}
+  .bar{height:8px;background:#2c2934;border-radius:6px;overflow:hidden;margin:8px 0}
+  .bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .4s}
+  .beat{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .beat .t{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .beat .s{color:var(--dim);font-size:13px}
+  .beat .acts{display:flex;gap:6px;align-items:center}
+  .beat .more{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px 12px;font-size:13px}
+  .beat .more a,.beat .more button{color:var(--acc);background:none;border:0;padding:0;font:inherit;font-weight:650;cursor:pointer;text-decoration:none}
+  .beat audio{grid-column:1/-1;width:100%;margin-top:6px}
+  .beat.cur .t::after{content:" · current";color:var(--acc);font-weight:600;font-size:12px}
+  .star{background:none;border:0;font-size:20px;cursor:pointer;color:var(--dim)}
+  .star.on{color:var(--acc)}
   @media (max-width:520px){.lane .name{width:58px}.drumopts{margin-left:0}.cell{font-size:8px}}
 </style>
 </head>
 <body>
+<div id="topbar"><button class="btn" id="undoBtn" title="Undo">↶ Undo</button></div>
+<div id="toast"><span id="toastText"></span><button id="toastAct"></button></div>
 <main>
   <h1>Beat<span>Maker</span></h1>
   <p class="sub">Pick a style, press the button, get a finished beat. Then make it yours.</p>
@@ -170,6 +191,12 @@
 
   <details class="card"><summary>Mix &amp; master</summary>
     <div class="row" id="mix"></div>
+  </details>
+
+  <details class="card" id="beatsCard"><summary>📚 My beats <small id="beatsCount">everything you've made</small></summary>
+    <div class="note">Star the beats you want to keep for good: the newest 20 (up to 3 GB) are kept, older unstarred ones are removed.</div>
+    <input type="text" id="beatSearch" placeholder="Search by name, style or key" style="width:100%;margin-top:10px">
+    <div id="beats"></div>
   </details>
 
   <details class="card"><summary>Save &amp; load</summary>
@@ -271,10 +298,10 @@ function build() {
     if (S.length > 0) F.append(el("div", {class: "note"},
       "The song repeats its verses and hooks with new melody ideas to fill the time. Long beats take a little longer to make."));
   }
+  F.append(el("label", {class: "ctl"}, el("b", {}, S.format === "full" ? "Name your beat (optional)" : "Name (also on the video)"), (() => {
+    const i = el("input", {type: "text", value: S.title || "", maxlength: 60, placeholder: "e.g. Late night amapiano"});
+    i.oninput = () => { S.title = i.value; save(); }; return i; })()));
   if (S.format !== "full") {
-    F.append(el("label", {class: "ctl"}, el("b", {}, "Title on the video"), (() => {
-      const i = el("input", {type: "text", value: S.title || "", placeholder: "e.g. Late night amapiano"});
-      i.onchange = () => { S.title = i.value; save(); }; return i; })()));
     F.append(check("Also make a vertical video (MP4)", S, "export_video"));
     F.append(el("div", {class: "note"}, "Hook-first, loops seamlessly, louder, with bass that comes through phone speakers."));
   }
@@ -390,16 +417,46 @@ function save() { store.set("beatmaker.settings", S); }
 async function clean(obj) {
   return (await fetch("/api/sanitize", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(obj)})).json();
 }
-async function loadGenre(g) {
-  const length = S ? S.length : 0;
+// ---------- undo for big changes, and a small toast
+const UNDO = [];
+let toastTimer = null;
+function toast(text, action, onAction) {
+  $("toastText").textContent = text;
+  const b = $("toastAct"); b.style.display = action ? "inline" : "none"; b.textContent = action || "";
+  b.onclick = () => { $("toast").style.display = "none"; onAction && onAction(); };
+  $("toast").style.display = "block";
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").style.display = "none"; }, 5000);
+}
+function remember(what) {
+  UNDO.push([what, JSON.stringify(S)]); if (UNDO.length > 20) UNDO.shift();
+  $("undoBtn").style.display = "inline-block"; $("undoBtn").title = "Undo: " + what;
+}
+function offerUndo(done) { toast(done, "Undo", undo); }
+async function undo() {
+  if (!UNDO.length) return;
+  const [what, before] = UNDO.pop();
+  S = await clean(JSON.parse(before)); save(); build();
+  $("undoBtn").style.display = UNDO.length ? "inline-block" : "none";
+  if (UNDO.length) $("undoBtn").title = "Undo: " + UNDO[UNDO.length - 1][0];
+  toast("Undid: " + what);
+}
+$("undoBtn").onclick = undo;
+
+async function loadGenre(g, reset = false) {
+  const keep = S ? {length: S.length, title: S.title, format: S.format} : {};
+  const label = (O && O.genres[g]) || g;
+  if (S) remember(reset ? "Reset style" : "Switch to " + label);
   S = await (await fetch("/api/preset/" + g)).json();
-  S.length = length || 0; save(); build();
+  S.length = keep.length || 0; if (keep.title) S.title = keep.title;
+  save(); build();
+  offerUndo(reset ? "Style reset to its starting point" : "Switched to " + label);
 }
 
 $("addSect").onclick = () => { S.arrangement.push(["verse", 8]); save(); build(); };
 $("newMelody").onclick = () => { S.melody.seed = Math.floor(Math.random() * 100000); save(); build(); render(); };
-$("reset").onclick = () => loadGenre(S.genre);
+$("reset").onclick = () => loadGenre(S.genre, true);
 $("surprise").onclick = () => {
+  remember("Surprise me");
   const pick = a => a[Math.floor(Math.random() * a.length)];
   S.key = pick(O.notes);
   S.progression = pick(Object.values(O.progressions));
@@ -417,7 +474,7 @@ $("saveFile").onclick = () => {
 };
 $("loadFile").onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { S = await clean(JSON.parse(await f.text())); save(); build(); $("status").textContent = "Settings loaded."; }
+  try { const next = await clean(JSON.parse(await f.text())); remember("Load settings"); S = next; save(); build(); offerUndo("Settings loaded"); }
   catch (err) { $("status").textContent = "That file isn't a BeatMaker settings file."; }
 };
 
@@ -586,35 +643,159 @@ $("useSongs").onclick = async () => {
   const res = await fetch("/api/inspire/apply", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({refs, use: R.use, settings: S})});
   const j = await res.json();
   if (!res.ok) { $("inspNotes").innerHTML = ""; $("inspNotes").append(el("li", {class: "err"}, j.error || "Something went wrong")); return; }
-  S = j.settings; save(); build();
+  remember("Inspiration"); S = j.settings; save(); build();
   $("inspNotes").innerHTML = ""; j.notes.forEach(n => $("inspNotes").append(el("li", {}, n)));
   render();
 };
 
+// ---------- making a beat (a background job: real progress, and it can be stopped)
+let currentJob = null, current = null;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const fmtTime = s => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s";
+async function postJSON(url, body) {
+  const res = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || "server error " + res.status);
+  return j;
+}
+async function waitJob(id, onTick) {
+  let misses = 0;
+  while (true) {
+    await sleep(400);
+    let j;
+    try { j = await (await fetch("/api/job/" + id)).json(); misses = 0; }
+    catch (e) { if (++misses > 25) throw new Error("Lost contact with the engine."); continue; }
+    onTick && onTick(j);
+    if (j.status === "done") return j.result;
+    if (j.status === "cancelled") { const e = new Error("Stopped"); e.stopped = true; throw e; }
+    if (j.status === "error") throw new Error(j.error || "Something went wrong");
+  }
+}
+function showProgress(on) {
+  $("make").style.display = on ? "none" : "block";
+  let p = $("prog");
+  if (!on) { if (p) p.remove(); return; }
+  if (!p) {
+    p = el("div", {class: "prog", id: "prog"},
+      el("div", {class: "top"}, el("span", {id: "progMsg"}, "Starting…"), el("small", {id: "progPct"}, "")),
+      el("div", {class: "bar"}, el("i", {id: "progBar"})),
+      el("div", {class: "top"}, el("small", {}, S.length > 0 ? "Long beats take a few minutes." : ""),
+        el("button", {class: "btn", id: "stopBtn", onclick: stopRender}, "■ Stop")));
+    $("make").after(p);
+  }
+}
+async function stopRender() {
+  if (!currentJob) return;
+  $("stopBtn").disabled = true; $("progMsg").textContent = "Stopping…";
+  await postJSON("/api/job/cancel", {id: currentJob}).catch(() => {});
+}
 async function render() {
-  const btn = $("make"); btn.disabled = true;
-  const steps = ["Programming drums…", "Laying down the bass…", "Playing the chords…", "Writing a melody…", "Mixing…", "Mastering…"]
-    .concat(S.export_video ? ["Making the video…"] : []);
-  let k = 0; $("status").textContent = steps[0];
-  const tick = setInterval(() => { k = Math.min(k + 1, steps.length - 1); $("status").textContent = steps[k]; }, 2500);
+  if (currentJob) return;
+  const t0 = Date.now();
+  showProgress(true); $("status").textContent = "";
   try {
-    const res = await fetch("/api/render", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(S)});
-    if (!res.ok) throw new Error("server error " + res.status);
-    const r = await res.json();
+    const {id} = await postJSON("/api/render", S);
+    currentJob = id;
+    const r = await waitJob(id, j => {
+      if ($("stopBtn") && !$("stopBtn").disabled) $("progMsg").textContent = j.message;
+      $("progBar").style.width = Math.round((j.pct || 0) * 100) + "%";
+      $("progPct").textContent = Math.round((j.pct || 0) * 100) + "% · " + fmtTime(Math.round((Date.now() - t0) / 1000));
+    });
     S = r.settings; save(); build();
-    $("out").style.display = "block";
-    $("player").src = r.mp3 || r.wav; $("player").play().catch(() => {});
-    $("stats").textContent = `${Math.floor(r.duration / 60)}:${String(Math.round(r.duration % 60)).padStart(2, "0")} · ${r.lufs} LUFS · peak ${r.peak_db} dB · ${S.bpm} BPM in ${S.key} ${S.scale}`;
-    $("dl").innerHTML = "";
-    $("dl").append(el("a", {href: r.wav}, "⬇ WAV"), el("a", {href: r.stems}, "⬇ Stems (.zip)"), el("a", {href: r.midi}, "⬇ MIDI"));
-    if (r.mp3) $("dl").append(el("a", {href: r.mp3, download: "beat.mp3"}, "⬇ MP3"));
-    const vp = $("vplayer");
-    if (r.video) { vp.src = r.video; vp.style.display = "block"; $("dl").append(el("a", {href: r.video, download: "beat.mp4"}, "⬇ Video (MP4)")); }
-    else { vp.removeAttribute("src"); vp.style.display = "none"; }
-    $("status").textContent = "Done! Tweak anything and press the button again.";
+    showBeat(r);
+    $("status").textContent = `Done in ${fmtTime(Math.round((Date.now() - t0) / 1000))}. Tweak anything and press the button again.`;
+    toast("Your beat is ready");
+    $("out").scrollIntoView({behavior: "smooth", block: "center"});
+    loadBeats();
   } catch (err) {
-    $("status").textContent = "Something went wrong: " + err.message;
-  } finally { clearInterval(tick); btn.disabled = false; }
+    $("status").textContent = err.stopped ? "Stopped. Your settings are still here." : "Something went wrong: " + err.message;
+  } finally { currentJob = null; showProgress(false); }
+}
+function showBeat(r) {
+  current = r;
+  $("out").style.display = "block";
+  $("player").src = r.mp3 || r.wav; $("player").play().catch(() => {});
+  const name = (r.name || (r.settings && r.settings.title) || "").trim();
+  const bpm = r.bpm || (r.settings && r.settings.bpm), key = r.key || (r.settings && r.settings.key), scale = r.scale || (r.settings && r.settings.scale);
+  $("stats").textContent = (name ? name + " · " : "") + `${Math.floor(r.duration / 60)}:${String(Math.round(r.duration % 60)).padStart(2, "0")} · ${r.lufs} LUFS · ${Math.round(bpm)} BPM in ${key} ${scale}`;
+  $("dl").innerHTML = "";
+  $("dl").append(el("a", {href: r.wav, download: ""}, "⬇ WAV"));
+  if (r.mp3) $("dl").append(el("a", {href: r.mp3, download: ""}, "⬇ MP3"));
+  $("dl").append(stemsLink(r), el("a", {href: r.midi, download: ""}, "⬇ MIDI"));
+  const vp = $("vplayer");
+  if (r.video) { vp.src = r.video; vp.style.display = "block"; $("dl").append(el("a", {href: r.video, download: ""}, "⬇ Video (MP4)")); }
+  else { vp.removeAttribute("src"); vp.style.display = "none"; }
+}
+// stems are made when first asked for (they're big), from the beat's saved settings
+function stemsLink(b) {
+  if (b.stems) return el("a", {href: b.stems, download: ""}, "⬇ Stems (.zip)");
+  const btn = el("a", {href: "#"}, "⬇ Stems (.zip)");
+  btn.onclick = async e => {
+    e.preventDefault(); if (btn.dataset.busy) return;
+    btn.dataset.busy = "1"; btn.textContent = "Making stems…";
+    try {
+      const {id} = await postJSON("/api/beats/stems", {id: b.id});
+      const info = await waitJob(id);
+      b.stems = info.stems; btn.textContent = "⬇ Stems (.zip)"; btn.href = info.stems; btn.onclick = null;
+      location.href = info.stems; loadBeats();
+    } catch (err) { btn.textContent = "Stems failed: " + err.message; delete btn.dataset.busy; }
+  };
+  return btn;
+}
+
+// ---------- my beats
+let BEATS = [], playingBeat = null;
+async function loadBeats() {
+  try { BEATS = (await (await fetch("/api/beats/list")).json()).beats; } catch (e) { return; }
+  buildBeats();
+}
+function ago(t) {
+  const m = Math.round((Date.now() / 1000 - t) / 60);
+  return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " d ago";
+}
+function buildBeats() {
+  const box = $("beats"); box.innerHTML = "";
+  const starred = BEATS.filter(b => b.starred).length;
+  $("beatsCount").textContent = BEATS.length ? `${BEATS.length} beats · ${starred} starred` : "everything you've made";
+  const q = $("beatSearch").value.trim().toLowerCase();
+  const list = BEATS.filter(b => !q || `${b.name} ${b.genre_label} ${b.key}`.toLowerCase().includes(q));
+  if (!BEATS.length) { box.append(el("div", {class: "note", style: "margin-top:10px"}, "No beats yet. Make one above.")); return; }
+  if (!list.length) { box.append(el("div", {class: "note", style: "margin-top:10px"}, "Nothing matches.")); return; }
+  list.forEach(b => {
+    const len = b.duration ? `${Math.floor(b.duration / 60)}:${String(Math.round(b.duration % 60)).padStart(2, "0")}` : "";
+    const info = [b.genre_label, b.bpm && Math.round(b.bpm) + " BPM", b.key && `${b.key} ${b.scale}`, len, b.format !== "full" && "TikTok", b.tags_placed > 0 && "tagged"].filter(Boolean).join(" · ");
+    const star = el("button", {class: "star" + (b.starred ? " on" : ""), title: b.starred ? "Unstar" : "Star (keep for good)"}, b.starred ? "★" : "☆");
+    star.onclick = async () => { await postJSON("/api/beats/update", {id: b.id, starred: !b.starred}); toast(b.starred ? "Unstarred" : "Starred: kept for good"); loadBeats(); };
+    const play = el("button", {class: "btn"}, playingBeat === b.id ? "Hide" : "▶ Play");
+    play.onclick = () => { playingBeat = playingBeat === b.id ? null : b.id; buildBeats(); };
+    const row = el("div", {class: "beat" + (current && current.id === b.id ? " cur" : "")},
+      el("div", {}, el("div", {class: "t"}, b.name), el("div", {class: "s"}, info + " · " + ago(b.created))),
+      el("div", {class: "acts"}, play, star));
+    const more = el("div", {class: "more"});
+    const open = el("button", {}, "✎ Open"); open.onclick = () => openBeat(b);
+    const ren = el("button", {}, "Rename"); ren.onclick = async () => {
+      const n = prompt("Rename beat", b.name); if (n && n.trim()) { await postJSON("/api/beats/update", {id: b.id, name: n.trim()}); loadBeats(); } };
+    const del = el("button", {}, "Delete"); del.onclick = async () => {
+      if (!confirm(`Delete "${b.name}"? Its stems and MIDI are removed too.`)) return;
+      await postJSON("/api/beats/delete", {id: b.id}); toast(`Deleted "${b.name}"`); loadBeats(); };
+    more.append(open, el("a", {href: b.wav, download: ""}, "WAV"));
+    if (b.mp3) more.append(el("a", {href: b.mp3, download: ""}, "MP3"));
+    more.append(stemsLink(b), el("a", {href: b.midi, download: ""}, "MIDI"), ren, del);
+    row.append(more);
+    if (playingBeat === b.id) { const a = el("audio", {controls: "", src: b.mp3 || b.wav}); row.append(a); a.play().catch(() => {}); }
+    box.append(row);
+  });
+}
+$("beatSearch").oninput = buildBeats;
+async function openBeat(b) {
+  try {
+    const st = await (await fetch(`/api/beats/${b.id}/settings`)).json();
+    const next = await clean(st); next.title = b.name;
+    remember(`Open "${b.name}"`); S = next; save(); build();
+    showBeat(b);
+    window.scrollTo({top: 0, behavior: "smooth"});
+    offerUndo(`Opened "${b.name}". Change anything and make it again`);
+  } catch (e) { toast("Couldn't open that beat."); }
 }
 
 (async () => {
@@ -627,6 +808,7 @@ async function render() {
   R.refs = R.refs.filter(r => r.id);
   buildRefs();
   if (R.refs.length) $("inspCard").open = true;
+  loadBeats();
 })();
 </script>
 </body>

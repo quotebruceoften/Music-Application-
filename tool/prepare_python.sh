@@ -3,6 +3,8 @@
 # Usage: tool/prepare_python.sh Android|iOS|Windows|macOS|Linux
 set -euo pipefail
 PLATFORM="${1:-Android}"
+# serious_python 6 calls macOS "Darwin"
+if [ "$PLATFORM" = "macOS" ] || [ "$PLATFORM" = "macos" ]; then PLATFORM="Darwin"; fi
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC="$ROOT/mobile/python"
 # serious_python 6 stages the packages and the app here; the Flutter build reads the same variables
