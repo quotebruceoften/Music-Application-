@@ -28,6 +28,9 @@ on:
 
 env:
   ALLOW_LINKS: ${{ github.event_name != 'workflow_dispatch' || inputs.allow_links }}
+  # serious_python installs the engine's Python packages here, and the Android/iOS
+  # builds embed them from here (they fail if this isn't set)
+  SERIOUS_PYTHON_SITE_PACKAGES: ${{ github.workspace }}/mobile/build/site-packages
 
 jobs:
   android:
