@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeatMaker</title>
+<style>
+  :root{--bg:#0f0e13;--card:#1a1820;--line:#2c2934;--text:#ecebf0;--dim:#9a96a6;--acc:#ffb547;--acc2:#ff6b4a;--soft:#6a5cff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  main{max-width:860px;margin:0 auto;padding:16px 14px 120px}
+  h1{font-size:26px;margin:6px 0 2px;letter-spacing:-.5px}
+  h1 span{color:var(--acc)}
+  .sub{color:var(--dim);margin:0 0 16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  details.card>summary{cursor:pointer;font-weight:650;font-size:16px;list-style:none;display:flex;justify-content:space-between}
+  details.card>summary::after{content:"+";color:var(--dim);font-size:20px;line-height:1}
+  details[open].card>summary::after{content:"–"}
+  details.card>summary small{color:var(--dim);font-weight:400;margin-left:8px}
+  details.card[open]>summary{margin-bottom:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{background:#24212c;border:1px solid var(--line);color:var(--text);padding:9px 14px;border-radius:999px;font-weight:600;cursor:pointer}
+  .chip.on{background:var(--acc);color:#1a1300;border-color:var(--acc)}
+  .row{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 16px;margin-top:12px}
+  label.ctl{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--dim)}
+  label.ctl b{color:var(--text);font-weight:600}
+  label.ctl .v{float:right;color:var(--acc);font-variant-numeric:tabular-nums}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  select,input[type=text],input[type=number]{background:#24212c;border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 8px;font:inherit;width:100%}
+  .check{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--text)}
+  .check input{accent-color:var(--acc);width:18px;height:18px}
+  .big{width:100%;padding:16px;border:0;border-radius:12px;background:linear-gradient(90deg,var(--acc),var(--acc2));color:#1a0d00;font-size:18px;font-weight:800;cursor:pointer;margin-top:14px}
+  .big:disabled{opacity:.6;cursor:wait}
+  .btn{background:#24212c;border:1px solid var(--line);color:var(--text);padding:8px 12px;border-radius:8px;cursor:pointer;font:inherit;font-weight:600}
+  .btn:hover{border-color:var(--acc)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .grid{display:grid;grid-template-columns:repeat(16,1fr);gap:3px;flex:1;min-width:0}
+  .cell{aspect-ratio:1;border-radius:4px;background:#2a2732;border:0;padding:0;cursor:pointer;font-size:10px;font-weight:800;color:#1a1300}
+  .cell:nth-child(4n+1){background:#34303e}
+  .cell.x{background:var(--acc)} .cell.o{background:#a87a33}
+  .cell.f{background:var(--soft);color:#fff} .cell.u{background:#45c4a0}
+  .lane{display:flex;align-items:center;gap:8px;margin:7px 0}
+  .lane .name{width:74px;flex:none;font-size:13px;font-weight:650;display:flex;flex-direction:column}
+  .lane .name button{margin-top:2px;font-size:11px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);background:none;color:var(--dim);cursor:pointer;width:max-content}
+  .lane.muted .grid{opacity:.3}
+  .lane .name button.m{background:var(--acc2);color:#fff;border-color:var(--acc2)}
+  .gear{flex:none;background:none;border:0;color:var(--dim);font-size:18px;cursor:pointer}
+  .drumopts{margin:0 0 10px 82px;padding:10px;border-left:2px solid var(--line)}
+  .legend{color:var(--dim);font-size:12px;margin:4px 0 8px}
+  .sect{display:grid;grid-template-columns:1fr 80px auto;gap:6px;align-items:center;margin:6px 0}
+  table.matrix{border-collapse:collapse;width:100%;font-size:13px;margin-top:10px}
+  table.matrix th,table.matrix td{padding:4px;text-align:center;border-bottom:1px solid var(--line)}
+  table.matrix td:first-child,table.matrix th:first-child{text-align:left}
+  table.matrix input{accent-color:var(--acc);width:17px;height:17px}
+  #out{display:none}
+  #out audio{width:100%;margin-top:10px}
+  .stats{color:var(--dim);font-size:13px;margin-top:6px}
+  .dl a{display:inline-block;margin:10px 8px 0 0;color:var(--acc);font-weight:650;text-decoration:none}
+  #status{color:var(--acc);margin-top:10px;min-height:20px;font-weight:600}
+  .note{color:var(--dim);font-size:13px}
+  .drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;color:var(--dim);cursor:pointer;display:block}
+  .drop.over{border-color:var(--acc);color:var(--text)}
+  .drop b{color:var(--acc)}
+  .linkrow{display:flex;gap:8px;margin-top:10px}
+  .linkrow input{flex:1}
+  .ref{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+  .ref .t{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ref .s{color:var(--dim);font-size:13px;grid-column:1/-1}
+  .ref label.ctl{grid-column:1/-1}
+  .ref.busy .t{color:var(--acc)}
+  .uses{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .uses .chip{padding:6px 11px;font-size:13px}
+  #inspNotes{margin:10px 0 0;padding-left:18px;color:var(--dim);font-size:13px}
+  #inspNotes li{margin:2px 0}
+  .err{color:var(--acc2)}
+  .ideas{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .ideas .chip{font-weight:500;font-size:13px;padding:7px 11px}
+  #tagOut audio,#out video{width:100%;margin-top:10px;border-radius:10px}
+  #out video{max-height:420px;background:#000}
+  .or{color:var(--dim);font-size:13px;margin:12px 0 4px}
+  .rec.on{background:var(--acc2);color:#fff;border-color:var(--acc2)}
+  @media (max-width:520px){.lane .name{width:58px}.drumopts{margin-left:0}.cell{font-size:8px}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Beat<span>Maker</span></h1>
+  <p class="sub">Pick a style, press the button, get a finished beat. Then make it yours.</p>
+
+  <details class="card" id="inspCard"><summary>🎧 Start from songs you love <small>optional</small></summary>
+    <div class="note">Add one or more songs or videos. BeatMaker listens for their tempo, key, drum groove, chord movement, swing and tone, then blends them into a new beat. Their audio and melodies are never copied.</div>
+    <label class="drop" id="drop"><input type="file" id="songFiles" accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.mp4,.mov" multiple hidden>
+      <b>Upload songs or videos</b> or drop them here<br><small>MP3, WAV, M4A, MP4, MOV (TikToks, Reels, screen recordings)</small></label>
+    <div class="linkrow"><input type="text" id="songLink" placeholder="…or paste a link (TikTok, YouTube, Instagram, Spotify, .mp3)"><button class="btn" id="addLink">Add</button></div>
+    <div id="refs"></div>
+    <div class="note" style="margin-top:12px">Take from them:</div>
+    <div class="uses" id="uses"></div>
+    <button class="big" id="useSongs" style="display:none">Make a beat inspired by these</button>
+    <ul id="inspNotes"></ul>
+  </details>
+
+  <section class="card">
+    <div class="chips" id="genres"></div>
+    <div class="row" id="quick"></div>
+    <div class="row" id="formatRow"></div>
+    <div class="btns">
+      <button class="btn" id="newMelody">🎲 New melody</button>
+      <button class="btn" id="surprise">✨ Surprise me</button>
+      <button class="btn" id="reset">↺ Reset style</button>
+    </div>
+    <button class="big" id="make">Make my beat</button>
+    <div id="status"></div>
+    <div id="out">
+      <audio id="player" controls></audio>
+      <video id="vplayer" controls playsinline style="display:none"></video>
+      <div class="stats" id="stats"></div>
+      <div class="dl" id="dl"></div>
+    </div>
+  </section>
+
+  <details class="card" id="tagCard"><summary>🏷️ Producer tag <small>your signature on every beat</small></summary>
+    <div class="row" id="tagTop"></div>
+    <div class="btns"><button class="btn" id="tagIdeas">💡 Give me ideas</button></div>
+    <div class="ideas" id="ideas"></div>
+    <div class="row" id="tagVoice"></div>
+    <div class="or">…or use your own voice (best for a real signature):</div>
+    <div class="btns">
+      <label class="btn">⬆ Upload voice<input type="file" id="tagFile" accept="audio/*,video/*" hidden></label>
+      <button class="btn rec" id="recBtn">🎙 Record</button>
+      <span class="note" id="ownVoice"></span>
+    </div>
+    <div class="row" id="tagFx"></div>
+    <button class="big" id="makeTag">Make my tag</button>
+    <div id="tagStatus" class="note" style="margin-top:8px"></div>
+    <div id="tagOut" style="display:none">
+      <audio id="tagPlayer" controls></audio>
+      <div class="dl" id="tagDl"></div>
+      <div class="row" id="tagUse"></div>
+    </div>
+  </details>
+
+  <details class="card" id="drumsCard"><summary>Drums <small>tap squares to change the rhythm</small></summary>
+    <div class="legend">Tap a square: empty → <b style="color:var(--acc)">hit</b> → <b style="color:#a87a33">soft hit</b>. ⚙ opens the sound settings.</div>
+    <div id="drums"></div>
+  </details>
+
+  <details class="card"><summary>Bass</summary>
+    <div class="legend">Tap: empty → hit → soft → <b style="color:var(--soft)">5</b> (fifth) → <b style="color:#45c4a0">^</b> (octave up). The bass follows your chords automatically.</div>
+    <div class="lane"><div class="name">Bass</div><div class="grid" id="bassGrid"></div></div>
+    <div class="row" id="bass"></div>
+  </details>
+
+  <details class="card"><summary>Chords</summary>
+    <div class="row" id="chordProg"></div>
+    <div class="lane" style="margin-top:12px"><div class="name">Rhythm</div><div class="grid" id="chordGrid"></div></div>
+    <div class="row" id="chords"></div>
+  </details>
+
+  <details class="card"><summary>Melody</summary>
+    <div class="row" id="melody"></div>
+  </details>
+
+  <details class="card"><summary>Song structure</summary>
+    <div class="note">Order of parts and their length in bars.</div>
+    <div id="arr"></div>
+    <div class="btns"><button class="btn" id="addSect">+ Add part</button></div>
+    <div class="note" style="margin-top:14px">What plays in each kind of part:</div>
+    <div style="overflow-x:auto"><table class="matrix" id="matrix"></table></div>
+  </details>
+
+  <details class="card"><summary>Mix &amp; master</summary>
+    <div class="row" id="mix"></div>
+  </details>
+
+  <details class="card"><summary>Save &amp; load</summary>
+    <div class="note">Save your sound as a file and load it later, or share it with a friend.</div>
+    <div class="btns">
+      <button class="btn" id="saveFile">⬇ Save settings</button>
+      <label class="btn">⬆ Load settings<input type="file" id="loadFile" accept=".json" hidden></label>
+    </div>
+  </details>
+</main>
+
+<script>
+let O = null, S = null;
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e[k] = v; else e.setAttribute(k, v);
+  }
+  kids.flat().forEach(k => e.append(k instanceof Node ? k : document.createTextNode(k)));
+  return e;
+};
+const store = {
+  get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
+};
+const LABEL = {kick:"Kick",snare:"Snare",clap:"Clap",hat:"Hi-hat",openhat:"Open hat",shaker:"Shaker",perc:"Perc",
+  bass:"Bass",chords:"Chords",melody:"Melody",fx:"Risers/FX",texture:"Vinyl"};
+
+// ---------- generic controls
+function slider(label, obj, key, min, max, step, fmt = v => v) {
+  const v = el("span", {class: "v"}, fmt(obj[key]));
+  const inp = el("input", {type: "range", min, max, step, value: obj[key]});
+  inp.oninput = () => { obj[key] = parseFloat(inp.value); v.textContent = fmt(obj[key]); save(); };
+  return el("label", {class: "ctl"}, el("b", {}, label, v), inp);
+}
+function select(label, obj, key, choices, after) {
+  const s = el("select", {});
+  (Array.isArray(choices) ? choices.map(c => [c, c]) : Object.entries(choices)).forEach(([val, txt]) => {
+    const o = el("option", {value: val}, txt); if (String(obj[key]) === String(val)) o.selected = true; s.append(o);
+  });
+  s.onchange = () => { obj[key] = s.value; save(); after && after(); };
+  return el("label", {class: "ctl"}, el("b", {}, label), s);
+}
+function check(label, obj, key, after) {
+  const c = el("input", {type: "checkbox"}); c.checked = !!obj[key];
+  c.onchange = () => { obj[key] = c.checked; save(); after && after(); };
+  return el("label", {class: "check"}, c, label);
+}
+const pct = v => Math.round(v * 100) + "%";
+const dB = v => (v > 0 ? "+" : "") + Number(v).toFixed(0) + " dB";
+const semis = v => (v > 0 ? "+" : "") + v + " st";
+
+function grid(container, obj, key, cycle) {
+  container.innerHTML = "";
+  const cls = {".": "", x: "x", o: "o", "5": "f", "^": "u"};
+  [...obj[key]].forEach((ch, i) => {
+    const b = el("button", {class: "cell " + cls[ch], title: "step " + (i + 1)}, ch === "5" || ch === "^" ? ch : "");
+    b.onclick = () => {
+      const arr = [...obj[key]];
+      arr[i] = cycle[(cycle.indexOf(arr[i]) + 1) % cycle.length];
+      obj[key] = arr.join(""); save(); grid(container, obj, key, cycle);
+    };
+    container.append(b);
+  });
+}
+
+// ---------- build UI from settings
+function build() {
+  $("genres").innerHTML = "";
+  Object.entries(O.genres).forEach(([k, label]) => {
+    $("genres").append(el("button", {class: "chip" + (S.genre === k ? " on" : ""), onclick: () => loadGenre(k)}, label));
+  });
+
+  const q = $("quick"); q.innerHTML = "";
+  q.append(
+    slider("Tempo", S, "bpm", 60, 180, 1, v => v + " BPM"),
+    slider("Energy", S, "energy", 0, 1, 0.05, pct),
+    slider("Swing / bounce", S, "swing", 0, 1, 0.05, pct),
+    slider("Human feel", S, "humanize", 0, 1, 0.05, pct),
+    select("Key", S, "key", O.notes),
+    select("Mood (scale)", S, "scale", O.scales),
+  );
+
+  // format
+  const F = $("formatRow"); F.innerHTML = "";
+  F.append(select("Format", S, "format", {full: "Full song (~1.5–2 min)", tiktok15: "TikTok sound · 15 s",
+      tiktok30: "TikTok sound · 30 s", tiktok60: "TikTok sound · 60 s"}, () => {
+    const tt = S.format !== "full";
+    S.mix.loudness = tt ? -10 : -14; S.mix.phone_bass = tt ? 0.6 : 0; S.export_video = tt;
+    if (tt) S.mix.width = Math.min(S.mix.width, 1.0);
+    save(); build();
+  }));
+  if (S.format !== "full") {
+    F.append(el("label", {class: "ctl"}, el("b", {}, "Title on the video"), (() => {
+      const i = el("input", {type: "text", value: S.title || "", placeholder: "e.g. Late night amapiano"});
+      i.onchange = () => { S.title = i.value; save(); }; return i; })()));
+    F.append(check("Also make a vertical video (MP4)", S, "export_video"));
+    F.append(el("div", {class: "note"}, "Hook-first, loops seamlessly, louder, with bass that comes through phone speakers."));
+  }
+
+  // drums
+  const D = $("drums"); D.innerHTML = "";
+  O.drums.forEach(name => {
+    const c = S.drums[name];
+    const opts = el("div", {class: "drumopts", style: "display:none"});
+    const mute = el("button", {class: c.mute ? "m" : ""}, c.mute ? "muted" : "mute");
+    const lane = el("div", {class: "lane" + (c.mute ? " muted" : "")},
+      el("div", {class: "name"}, LABEL[name], mute), el("div", {class: "grid"}),
+      el("button", {class: "gear", title: "sound settings", onclick: () => opts.style.display = opts.style.display === "none" ? "block" : "none"}, "⚙"));
+    mute.onclick = () => { c.mute = !c.mute; save(); build(); };
+    grid(lane.querySelector(".grid"), c, "pattern", [".", "x", "o"]);
+    const r = el("div", {class: "row"});
+    if (name === "kick") r.append(select("Sound", c, "sound", O.sounds.kick_sounds));
+    if (name === "snare") r.append(select("Sound", c, "sound", O.sounds.snare_sounds));
+    if (name === "perc") r.append(select("Sound", c, "sound", O.sounds.perc_sounds));
+    r.append(slider("Volume", c, "volume", -30, 6, 1, dB), slider("Tune", c, "tune", -12, 12, 1, semis),
+      slider("Length", c, "decay", 0.25, 3, 0.05, v => v.toFixed(2) + "×"), slider("Pan (L/R)", c, "pan", -1, 1, 0.05, v => v.toFixed(2)),
+      slider("Reverb", c, "reverb", 0, 1, 0.05, pct));
+    if ("fills" in c) r.append(check("Fills at end of parts", c, "fills"));
+    if ("rolls" in c) r.append(check("Trap hat rolls", c, "rolls"));
+    opts.append(r);
+    D.append(lane, opts);
+  });
+
+  // bass
+  grid($("bassGrid"), S.bass, "pattern", [".", "x", "o", "5", "^"]);
+  const B = $("bass"); B.innerHTML = "";
+  B.append(select("Sound", S.bass, "sound", O.sounds.bass_sounds),
+    slider("Volume", S.bass, "volume", -30, 6, 1, dB), slider("Octave", S.bass, "octave", 0, 3, 1),
+    slider("Length", S.bass, "decay", 0.25, 3, 0.05, v => v.toFixed(2) + "×"),
+    slider("Glide (808)", S.bass, "glide", 0, 1, 0.05, pct),
+    check("Duck under the kick", S.bass, "sidechain"), check("Mute", S.bass, "mute"));
+
+  // chords
+  const P = $("chordProg"); P.innerHTML = "";
+  const progText = el("input", {type: "text", value: S.progression.join(" ")});
+  const progSel = el("select", {});
+  progSel.append(el("option", {value: ""}, "Choose a progression…"));
+  Object.entries(O.progressions).forEach(([n, p]) => {
+    const o = el("option", {value: p.join(" ")}, n); if (p.join(" ") === S.progression.join(" ")) o.selected = true; progSel.append(o);
+  });
+  progSel.onchange = () => { if (progSel.value) { progText.value = progSel.value; setProg(progSel.value); } };
+  progText.onchange = () => setProg(progText.value);
+  function setProg(t) { const p = t.split(/[\s,\-]+/).map(Number).filter(n => n >= 1 && n <= 7).slice(0, 8); if (p.length) { S.progression = p; save(); } }
+  P.append(el("label", {class: "ctl"}, el("b", {}, "Progression"), progSel),
+    el("label", {class: "ctl"}, el("b", {}, "Or type your own (numbers 1–7)"), progText),
+    select("Each chord lasts", S, "chord_bars", {"0.5": "half a bar", "1": "1 bar", "2": "2 bars"}, () => S.chord_bars = parseFloat(S.chord_bars)));
+  grid($("chordGrid"), S.chords, "pattern", [".", "x", "o"]);
+  const C = $("chords"); C.innerHTML = "";
+  C.append(select("Sound", S.chords, "sound", O.sounds.chord_sounds), select("Richness", S.chords, "voicing", O.voicings),
+    slider("Volume", S.chords, "volume", -30, 6, 1, dB), slider("Octave", S.chords, "octave", 2, 6, 1),
+    slider("Brightness", S.chords, "brightness", 0, 1, 0.05, pct), slider("Stereo width", S.chords, "stereo", 0, 1, 0.05, pct),
+    slider("Reverb", S.chords, "reverb", 0, 1, 0.05, pct), slider("Echo", S.chords, "delay", 0, 1, 0.05, pct),
+    check("Duck under the kick", S.chords, "sidechain"), check("Mute", S.chords, "mute"));
+
+  // melody
+  const M = $("melody"); M.innerHTML = "";
+  M.append(select("Sound", S.melody, "sound", O.sounds.melody_sounds),
+    slider("Busy-ness", S.melody, "density", 0.05, 1, 0.05, pct), slider("Octave", S.melody, "octave", 3, 7, 1),
+    slider("Volume", S.melody, "volume", -30, 6, 1, dB), slider("Brightness", S.melody, "brightness", 0, 1, 0.05, pct),
+    slider("Reverb", S.melody, "reverb", 0, 1, 0.05, pct), slider("Echo", S.melody, "delay", 0, 1, 0.05, pct),
+    el("label", {class: "ctl"}, el("b", {}, "Melody idea #"), (() => { const i = el("input", {type: "number", value: S.melody.seed, min: 0});
+      i.onchange = () => { S.melody.seed = parseInt(i.value) || 0; save(); }; return i; })()),
+    check("Duck under the kick", S.melody, "sidechain"), check("Mute", S.melody, "mute"));
+
+  // arrangement
+  const A = $("arr"); A.innerHTML = "";
+  S.arrangement.forEach((item, i) => {
+    const typ = el("select", {}); O.section_types.forEach(t => { const o = el("option", {value: t}, t); if (t === item[0]) o.selected = true; typ.append(o); });
+    typ.onchange = () => { item[0] = typ.value; save(); };
+    const bars = el("input", {type: "number", min: 1, max: 32, value: item[1]});
+    bars.onchange = () => { item[1] = Math.max(1, Math.min(32, parseInt(bars.value) || 4)); save(); };
+    const ctr = el("div", {class: "btns", style: "margin:0;flex-wrap:nowrap"},
+      el("button", {class: "btn", onclick: () => move(i, -1)}, "↑"), el("button", {class: "btn", onclick: () => move(i, 1)}, "↓"),
+      el("button", {class: "btn", onclick: () => { S.arrangement.splice(i, 1); save(); build(); }}, "✕"));
+    A.append(el("div", {class: "sect"}, typ, bars, ctr));
+  });
+  const T = $("matrix"); T.innerHTML = "";
+  T.append(el("tr", {}, el("th", {}, ""), ...O.section_types.map(t => el("th", {}, t))));
+  O.tracks.forEach(tr => {
+    T.append(el("tr", {}, el("td", {}, LABEL[tr]), ...O.section_types.map(sec => {
+      const c = el("input", {type: "checkbox"}); c.checked = (S.sections[sec] || []).includes(tr);
+      c.onchange = () => { const L = new Set(S.sections[sec] || []); c.checked ? L.add(tr) : L.delete(tr); S.sections[sec] = [...L]; save(); };
+      return el("td", {}, c);
+    })));
+  });
+
+  // mix
+  const X = $("mix"); X.innerHTML = "";
+  X.append(slider("Reverb amount", S.mix, "reverb", 0, 1, 0.05, pct), slider("Room size", S.mix, "reverb_size", 0.5, 5, 0.1, v => v.toFixed(1) + " s"),
+    slider("Echo amount", S.mix, "delay", 0, 1, 0.05, pct), slider("Pump (sidechain)", S.mix, "sidechain", 0, 1, 0.05, pct),
+    slider("Warmth", S.mix, "warmth", 0, 1, 0.05, pct), slider("Air (sparkle)", S.mix, "air", 0, 1, 0.05, pct),
+    slider("Stereo width", S.mix, "width", 0, 2, 0.05, v => Math.round(v * 100) + "%"),
+    slider("Loudness target", S.mix, "loudness", -20, -7, 0.5, v => v + " LUFS"),
+    slider("Phone-speaker bass", S.mix, "phone_bass", 0, 1, 0.05, pct),
+    select("Vinyl crackle", S.texture, "sound", O.sounds.texture_sounds),
+    check("Risers before hooks", S.fx, "risers"), check("Crashes on new parts", S.fx, "impacts"));
+}
+
+const _build = build;
+build = () => { _build(); if (V.styles && Object.keys(V.styles).length) buildTag(); };
+
+function move(i, d) {
+  const j = i + d; if (j < 0 || j >= S.arrangement.length) return;
+  [S.arrangement[i], S.arrangement[j]] = [S.arrangement[j], S.arrangement[i]]; save(); build();
+}
+function save() { store.set("beatmaker.settings", S); }
+
+async function clean(obj) {
+  return (await fetch("/api/sanitize", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(obj)})).json();
+}
+async function loadGenre(g) {
+  S = await (await fetch("/api/preset/" + g)).json(); save(); build();
+}
+
+$("addSect").onclick = () => { S.arrangement.push(["verse", 8]); save(); build(); };
+$("newMelody").onclick = () => { S.melody.seed = Math.floor(Math.random() * 100000); save(); build(); render(); };
+$("reset").onclick = () => loadGenre(S.genre);
+$("surprise").onclick = () => {
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  S.key = pick(O.notes);
+  S.progression = pick(Object.values(O.progressions));
+  S.melody.seed = Math.floor(Math.random() * 100000);
+  S.bpm = Math.round(S.bpm + (Math.random() * 10 - 5));
+  S.energy = Math.min(1, Math.max(0.2, +(S.energy + Math.random() * 0.3 - 0.15).toFixed(2)));
+  S.chords.sound = pick(O.sounds.chord_sounds);
+  S.melody.sound = pick(O.sounds.melody_sounds);
+  save(); build(); render();
+};
+$("make").onclick = () => render();
+$("saveFile").onclick = () => {
+  const a = el("a", {href: URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], {type: "application/json"})), download: `beat-${S.genre}-${S.key}.json`});
+  a.click();
+};
+$("loadFile").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { S = await clean(JSON.parse(await f.text())); save(); build(); $("status").textContent = "Settings loaded."; }
+  catch (err) { $("status").textContent = "That file isn't a BeatMaker settings file."; }
+};
+
+
+// ---------- producer tag
+let V = {voices: [], styles: {}};
+let T = Object.assign({text: "", engine: "", voice: "", style: "clean", pitch: 0, swell: true, impact: false, riser: false, last: null},
+  store.get("beatmaker.tag") || {});
+let ownVoice = null;  // File/Blob of the user's own recording
+const saveT = () => store.set("beatmaker.tag", T);
+
+function buildTag() {
+  const top = $("tagTop"); top.innerHTML = "";
+  const name = el("input", {type: "text", value: S.producer || "", placeholder: "Your producer name"});
+  name.onchange = () => { S.producer = name.value; save(); };
+  const text = el("input", {type: "text", value: T.text, placeholder: "e.g. Ke Bruce!"});
+  text.id = "tagText"; text.oninput = () => { T.text = text.value; saveT(); };
+  top.append(el("label", {class: "ctl"}, el("b", {}, "Producer name"), name),
+    el("label", {class: "ctl"}, el("b", {}, "Tag words"), text));
+
+  const tv = $("tagVoice"); tv.innerHTML = "";
+  if (V.voices.length) {
+    const sel = el("select", {});
+    V.voices.forEach((v, i) => { const o = el("option", {value: i}, v.label); if (v.engine === T.engine && v.id === T.voice) o.selected = true; sel.append(o); });
+    const pick = () => { const v = V.voices[sel.value]; T.engine = v.engine; T.voice = v.id; saveT(); };
+    sel.onchange = pick; if (!T.engine) pick();
+    tv.append(el("label", {class: "ctl"}, el("b", {}, "Voice"), sel));
+  } else {
+    tv.append(el("div", {class: "note"}, "No computer voice found. Run “pip install edge-tts” for natural neural voices (incl. South African and Nigerian accents), or use your own voice below."));
+  }
+  $("ownVoice").textContent = ownVoice ? "✓ Using your voice (" + (ownVoice.name || "recording") + ") " : "";
+  if (ownVoice) $("ownVoice").append(el("button", {class: "btn", onclick: () => { ownVoice = null; buildTag(); }}, "✕"));
+
+  const fxr = $("tagFx"); fxr.innerHTML = "";
+  fxr.append(select("Style", T, "style", Object.fromEntries(Object.entries(V.styles).map(([k, d]) => [k, d.split(":")[0]])), () => { saveT(); buildTag(); }),
+    slider("Voice pitch", T, "pitch", -7, 7, 1, semis),
+    check("Reverse swell into the voice", T, "swell", saveT), check("Impact (boom + crash)", T, "impact", saveT),
+    check("Riser before", T, "riser", saveT));
+  if (V.styles[T.style]) fxr.append(el("div", {class: "note"}, V.styles[T.style]));
+
+  if (T.last) {
+    $("tagOut").style.display = "block";
+    if ($("tagPlayer").getAttribute("src") !== T.last.mp3) $("tagPlayer").src = T.last.mp3 || T.last.wav;
+    $("tagDl").innerHTML = ""; $("tagDl").append(el("a", {href: T.last.wav}, "⬇ Tag (WAV)"));
+    const u = $("tagUse"); u.innerHTML = "";
+    const on = {v: S.tag.id === T.last.id};
+    u.append(check("Put this tag on my beats", on, "v", () => { S.tag.id = on.v ? T.last.id : null; save(); }),
+      select("Where", S.tag, "position", {start: "At the start", "start+hooks": "Start + before each hook", every8: "Every 8 bars"}),
+      slider("Tag volume", S.tag, "volume", -20, 6, 1, dB), slider("Duck the beat under the tag", S.tag, "duck", 0, 1, 0.05, pct));
+  }
+}
+
+$("tagIdeas").onclick = async () => {
+  const name = S.producer || "Producer";
+  const ideas = await (await fetch(`/api/tags/suggest?name=${encodeURIComponent(name)}&genre=${S.genre}&seed=${Math.floor(Math.random() * 1e6)}`)).json();
+  const box = $("ideas"); box.innerHTML = "";
+  ideas.forEach(i => box.append(el("button", {class: "chip", onclick: () => { T.text = i.text; T.style = i.style; saveT(); buildTag(); }}, i.text)));
+};
+$("tagFile").onchange = e => { ownVoice = e.target.files[0] || null; e.target.value = ""; buildTag(); };
+
+let rec = null, chunks = [];
+if (!(navigator.mediaDevices && window.MediaRecorder)) {
+  $("recBtn").onclick = () => { $("tagStatus").textContent = "Recording works when the app is opened as localhost on this device. On your phone, record a voice note and upload it instead."; };
+} else {
+  $("recBtn").onclick = async () => {
+    if (rec && rec.state === "recording") { rec.stop(); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+      chunks = []; rec = new MediaRecorder(stream);
+      rec.ondataavailable = e => chunks.push(e.data);
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        ownVoice = new File(chunks, "my-voice.webm", {type: rec.mimeType || "audio/webm"});
+        $("recBtn").classList.remove("on"); $("recBtn").textContent = "🎙 Record"; buildTag();
+      };
+      rec.start(); $("recBtn").classList.add("on"); $("recBtn").textContent = "⏹ Stop";
+    } catch (err) { $("tagStatus").textContent = "Couldn't use the microphone: " + err.message; }
+  };
+}
+
+$("makeTag").onclick = async () => {
+  if (!ownVoice && !T.text.trim()) { $("tagStatus").textContent = "Type your tag words (or tap an idea) first."; return; }
+  if (!ownVoice && !V.voices.length) { $("tagStatus").textContent = "No computer voice available. Upload or record your voice."; return; }
+  const fd = new FormData();
+  Object.entries({text: T.text, engine: T.engine, voice: T.voice, style: T.style, pitch: T.pitch,
+    swell: T.swell ? 1 : 0, impact: T.impact ? 1 : 0, riser: T.riser ? 1 : 0, bpm: S.bpm}).forEach(([k, v]) => fd.append(k, v));
+  if (ownVoice) fd.append("voice_file", ownVoice, ownVoice.name || "voice.webm");
+  $("makeTag").disabled = true; $("tagStatus").textContent = "Recording and processing your tag…";
+  try {
+    const res = await fetch("/api/tags/make", {method: "POST", body: fd});
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || "server error");
+    T.last = j; S.tag.id = j.id; save(); saveT();
+    $("tagStatus").textContent = `Done: a ${j.duration}s tag. It's on your beats now; press “Make my beat” to hear it in place.`;
+    buildTag(); $("tagPlayer").play().catch(() => {});
+  } catch (err) { $("tagStatus").textContent = "Couldn't make the tag: " + err.message; }
+  finally { $("makeTag").disabled = false; }
+};
+
+// ---------- inspiration
+const USE_LABELS = {style: "Style", tempo: "Tempo", key: "Key", groove: "Drum groove", chords: "Chords", feel: "Swing & energy", tone: "Tone"};
+let R = store.get("beatmaker.refs") || {refs: [], use: {}};
+Object.keys(USE_LABELS).forEach(k => { if (!(k in R.use)) R.use[k] = true; });
+const saveR = () => store.set("beatmaker.refs", {refs: R.refs.filter(r => r.id), use: R.use});
+
+function buildRefs() {
+  const box = $("refs"); box.innerHTML = "";
+  R.refs.forEach((r, i) => {
+    const row = el("div", {class: "ref" + (r.id ? "" : " busy")},
+      el("div", {class: "t", title: r.name}, r.id ? r.name : "Listening to " + r.name + "…"),
+      el("button", {class: "btn", onclick: () => { R.refs.splice(i, 1); saveR(); buildRefs(); }}, "✕"));
+    if (r.error) row.append(el("div", {class: "s err"}, r.error));
+    else if (r.id) {
+      row.append(el("div", {class: "s"}, r.summary + (r.analysis.progression ? " · chords " + r.analysis.progression.join("-") : "")));
+      if (R.refs.filter(x => x.id).length > 1) row.append(slider("Influence", r, "weight", 0, 1, 0.05, pct));
+    }
+    box.append(row);
+  });
+  const u = $("uses"); u.innerHTML = "";
+  Object.entries(USE_LABELS).forEach(([k, label]) => {
+    u.append(el("button", {class: "chip" + (R.use[k] ? " on" : ""), onclick: () => { R.use[k] = !R.use[k]; saveR(); buildRefs(); }}, label));
+  });
+  $("useSongs").style.display = R.refs.some(r => r.id) ? "block" : "none";
+}
+// sliders call save(); keep refs saved too
+const _save = save; save = () => { _save(); saveR(); };
+
+async function addRef(name, request) {
+  const r = {name, weight: 1}; R.refs.push(r); buildRefs();
+  try {
+    const res = await request();
+    const j = await res.json();
+    if (!res.ok || j.error) throw new Error(j.error || "server error " + res.status);
+    Object.assign(r, j, {weight: 1});
+  } catch (err) { r.error = err.message; }
+  saveR(); buildRefs();
+}
+async function addFiles(files) {
+  for (const f of files) {
+    const fd = new FormData(); fd.append("file", f);
+    await addRef(f.name, () => fetch("/api/inspire/upload", {method: "POST", body: fd}));
+  }
+}
+$("songFiles").onchange = e => { addFiles([...e.target.files]); e.target.value = ""; };
+const drop = $("drop");
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); addFiles([...e.dataTransfer.files]); };
+$("addLink").onclick = () => {
+  const url = $("songLink").value.trim(); if (!url) return; $("songLink").value = "";
+  addRef(url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 50), () => fetch("/api/inspire/link", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({url})}));
+};
+$("songLink").onkeydown = e => { if (e.key === "Enter") $("addLink").click(); };
+$("useSongs").onclick = async () => {
+  const refs = R.refs.filter(r => r.id).map(r => ({id: r.id, weight: r.weight}));
+  const res = await fetch("/api/inspire/apply", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({refs, use: R.use, settings: S})});
+  const j = await res.json();
+  if (!res.ok) { $("inspNotes").innerHTML = ""; $("inspNotes").append(el("li", {class: "err"}, j.error || "Something went wrong")); return; }
+  S = j.settings; save(); build();
+  $("inspNotes").innerHTML = ""; j.notes.forEach(n => $("inspNotes").append(el("li", {}, n)));
+  render();
+};
+
+async function render() {
+  const btn = $("make"); btn.disabled = true;
+  const steps = ["Programming drums…", "Laying down the bass…", "Playing the chords…", "Writing a melody…", "Mixing…", "Mastering…"]
+    .concat(S.export_video ? ["Making the video…"] : []);
+  let k = 0; $("status").textContent = steps[0];
+  const tick = setInterval(() => { k = Math.min(k + 1, steps.length - 1); $("status").textContent = steps[k]; }, 2500);
+  try {
+    const res = await fetch("/api/render", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(S)});
+    if (!res.ok) throw new Error("server error " + res.status);
+    const r = await res.json();
+    S = r.settings; save(); build();
+    $("out").style.display = "block";
+    $("player").src = r.mp3 || r.wav; $("player").play().catch(() => {});
+    $("stats").textContent = `${Math.floor(r.duration / 60)}:${String(Math.round(r.duration % 60)).padStart(2, "0")} · ${r.lufs} LUFS · peak ${r.peak_db} dB · ${S.bpm} BPM in ${S.key} ${S.scale}`;
+    $("dl").innerHTML = "";
+    $("dl").append(el("a", {href: r.wav}, "⬇ WAV"), el("a", {href: r.stems}, "⬇ Stems (.zip)"), el("a", {href: r.midi}, "⬇ MIDI"));
+    if (r.mp3) $("dl").append(el("a", {href: r.mp3, download: "beat.mp3"}, "⬇ MP3"));
+    const vp = $("vplayer");
+    if (r.video) { vp.src = r.video; vp.style.display = "block"; $("dl").append(el("a", {href: r.video, download: "beat.mp4"}, "⬇ Video (MP4)")); }
+    else { vp.removeAttribute("src"); vp.style.display = "none"; }
+    $("status").textContent = "Done! Tweak anything and press the button again.";
+  } catch (err) {
+    $("status").textContent = "Something went wrong: " + err.message;
+  } finally { clearInterval(tick); btn.disabled = false; }
+}
+
+(async () => {
+  O = await (await fetch("/api/options")).json();
+  const saved = store.get("beatmaker.settings");
+  if (saved && saved.genre) S = await clean(saved); else S = await (await fetch("/api/preset/amapiano")).json();
+  build();
+  try { V = await (await fetch("/api/tags/voices")).json(); } catch (e) {}
+  buildTag();
+  R.refs = R.refs.filter(r => r.id);
+  buildRefs();
+  if (R.refs.length) $("inspCard").open = true;
+})();
+</script>
+</body>
+</html>

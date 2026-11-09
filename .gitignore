@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+renders/
+mobile/build/
+mobile/.dart_tool/
+mobile/app/app.zip
+mobile/python/beatengine/
+mobile/python/server.py
+mobile/.flutter-plugins*
+mobile/pubspec.lock

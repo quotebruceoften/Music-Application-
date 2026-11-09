@@ -1,0 +1,30 @@
+name: beatmaker
+description: Make professional beats, TikTok sounds and producer tags — the engine runs on your device.
+publish_to: "none"
+version: 1.3.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  # Embedded Python runtime that runs the beat engine on Android, iOS, Windows, macOS and Linux
+  serious_python: ">=0.8.0 <1.0.0"
+  http: ">=1.1.0 <2.0.0"
+  path_provider: ">=2.1.0 <3.0.0"
+  shared_preferences: ">=2.2.0 <3.0.0"
+  file_picker: ">=8.0.0 <11.0.0"
+  share_plus: ">=7.2.0 <12.0.0"
+  audioplayers: ">=6.0.0 <7.0.0"
+  record: ">=5.1.0 <7.0.0"
+
+dev_dependencies:
+  flutter_lints: ">=3.0.0 <6.0.0"
+
+flutter:
+  uses-material-design: true
+  assets:
+    # Built by tool/prepare_python.sh: the engine + embedded Python packages
+    - app/app.zip

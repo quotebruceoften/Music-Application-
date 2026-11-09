@@ -1,0 +1,193 @@
+name: Build BeatMaker apps
+
+on:
+  push:
+    branches: [main, master, "claude/**"]
+  workflow_dispatch:
+    inputs:
+      ios:
+        description: "Also build iOS (unsigned, for testing)"
+        type: boolean
+        default: false
+      windows:
+        description: "Also build Windows"
+        type: boolean
+        default: false
+      macos:
+        description: "Also build macOS"
+        type: boolean
+        default: false
+      linux:
+        description: "Also build Linux"
+        type: boolean
+        default: false
+      allow_links:
+        description: "Allow song links (turn off for Play Store builds)"
+        type: boolean
+        default: true
+
+env:
+  ALLOW_LINKS: ${{ github.event_name != 'workflow_dispatch' || inputs.allow_links }}
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate platform folders
+        run: |
+          flutter create --project-name beatmaker --org app.beatmaker --platforms=android,ios,macos,windows,linux "$RUNNER_TEMP/template"
+          python tool/merge_template.py "$RUNNER_TEMP/template" mobile
+          cd mobile && python ../tool/patch_platforms.py
+      - name: App icon
+        run: pip install pillow && python tool/apply_icons.py
+      - name: Get packages
+        working-directory: mobile
+        run: flutter pub get
+      - name: Bundle the beat engine (Python + NumPy)
+        run: bash tool/prepare_python.sh Android
+      - name: Build APKs
+        working-directory: mobile
+        run: flutter build apk --release --split-per-abi --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatMaker-Android
+          path: mobile/build/app/outputs/flutter-apk/*.apk
+
+  ios:
+    name: iOS (unsigned)
+    if: github.event_name == 'workflow_dispatch' && inputs.ios
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate platform folders
+        run: |
+          flutter create --project-name beatmaker --org app.beatmaker --platforms=android,ios,macos,windows,linux "$RUNNER_TEMP/template"
+          python tool/merge_template.py "$RUNNER_TEMP/template" mobile
+          cd mobile && python ../tool/patch_platforms.py
+      - run: pip install pillow && python tool/apply_icons.py
+      - working-directory: mobile
+        run: flutter pub get
+      - run: bash tool/prepare_python.sh iOS
+      - working-directory: mobile
+        run: |
+          flutter build ios --release --no-codesign --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
+          cd build/ios/iphoneos && zip -qr ../../BeatMaker-iOS-unsigned.zip Runner.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatMaker-iOS-unsigned
+          path: mobile/build/BeatMaker-iOS-unsigned.zip
+
+  windows:
+    name: Windows
+    if: github.event_name == 'workflow_dispatch' && inputs.windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: |
+          flutter create --project-name beatmaker --org app.beatmaker --platforms=android,ios,macos,windows,linux "$RUNNER_TEMP/template"
+          python tool/merge_template.py "$RUNNER_TEMP/template" mobile
+          cd mobile && python ../tool/patch_platforms.py
+      - run: pip install pillow && python tool/apply_icons.py
+      - working-directory: mobile
+        run: flutter pub get
+      - run: bash tool/prepare_python.sh Windows
+      - working-directory: mobile
+        run: flutter build windows --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatMaker-Windows
+          path: mobile/build/windows/x64/runner/Release/
+
+  macos:
+    name: macOS
+    if: github.event_name == 'workflow_dispatch' && inputs.macos
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: |
+          flutter create --project-name beatmaker --org app.beatmaker --platforms=android,ios,macos,windows,linux "$RUNNER_TEMP/template"
+          python tool/merge_template.py "$RUNNER_TEMP/template" mobile
+          cd mobile && python ../tool/patch_platforms.py
+      - run: pip install pillow && python tool/apply_icons.py
+      - working-directory: mobile
+        run: flutter pub get
+      - run: bash tool/prepare_python.sh macOS
+      - working-directory: mobile
+        run: |
+          flutter build macos --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
+          cd build/macos/Build/Products/Release && zip -qr ../../../../BeatMaker-macOS.zip *.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatMaker-macOS
+          path: mobile/build/BeatMaker-macOS.zip
+
+  linux:
+    name: Linux
+    if: github.event_name == 'workflow_dispatch' && inputs.linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: |
+          flutter create --project-name beatmaker --org app.beatmaker --platforms=android,ios,macos,windows,linux "$RUNNER_TEMP/template"
+          python tool/merge_template.py "$RUNNER_TEMP/template" mobile
+          cd mobile && python ../tool/patch_platforms.py
+      - run: pip install pillow && python tool/apply_icons.py
+      - working-directory: mobile
+        run: flutter pub get
+      - run: bash tool/prepare_python.sh Linux
+      - working-directory: mobile
+        run: flutter build linux --release --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BeatMaker-Linux
+          path: mobile/build/linux/x64/release/bundle/
