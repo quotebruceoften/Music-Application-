@@ -91,7 +91,11 @@ record a voice note and upload it.
 
 ## Code map
 - `beatengine/presets.py`: the genre starting points (add new genres here)
-- `beatengine/synth.py`: every sound, synthesised from scratch (no samples)
+- `beatengine/synth.py`: drums, bass and synth keys, modelled from scratch (808-style drums, log drum,
+  Rhodes, supersaw pad/lead, plucked string), with small hit-to-hit variations
+- `beatengine/sampler.py` + `beatengine/samples/`: recorded piano, marimba, vibraphone, glockenspiel,
+  kalimba, flute (recorder), tenor sax and hand percussion from the VCSL library (CC0, public domain).
+  Rebuild them with `tool/build_samples.py`
 - `beatengine/theory.py`: keys, scales, progressions, voicing
 - `beatengine/engine.py`: arrangement, event building, mixing, export
 - `beatengine/fx.py`: reverb, delay, compressor, limiter, loudness meter
@@ -99,7 +103,7 @@ record a voice note and upload it.
 - `beatengine/analyze.py`: song analysis (tempo, beat grid, drum/note separation, key, chords, swing) and blending
 
 ## Ideas for v2
-- Load real drum samples (`.wav` kits) alongside the synth sounds
+- Let users load their own drum kits (`.wav`) alongside the built-in sounds
 - Hum a melody into the mic and turn it into notes
 - Live preview of a single loop while editing
 - More genres (kwaito, gqom, drill, R&B)

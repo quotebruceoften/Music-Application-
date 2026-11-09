@@ -410,19 +410,28 @@ def _place(buf, y, t, gain=1.0):
 
 
 DRUM_FN = {
-    "kick": lambda c: synth.kick(c.get("sound", "punchy"), c["tune"], c["decay"]),
-    "snare": lambda c: synth.snare(c.get("sound", "tight"), c["tune"], c["decay"]),
-    "clap": lambda c: synth.clap("clap", c["tune"], c["decay"]),
-    "hat": lambda c: synth.hat(False, c["tune"], c["decay"]),
-    "openhat": lambda c: synth.hat(True, c["tune"], c["decay"]),
-    "shaker": lambda c: synth.shaker("shaker", c["tune"], c["decay"]),
-    "perc": lambda c: synth.perc(c.get("sound", "rim"), c["tune"], c["decay"]),
+    "kick": lambda c, v: synth.kick(c.get("sound", "punchy"), c["tune"], c["decay"], v),
+    "snare": lambda c, v: synth.snare(c.get("sound", "tight"), c["tune"], c["decay"], v),
+    "clap": lambda c, v: synth.clap("clap", c["tune"], c["decay"], v),
+    "hat": lambda c, v: synth.hat(False, c["tune"], c["decay"], v),
+    "openhat": lambda c, v: synth.hat(True, c["tune"], c["decay"], v),
+    "shaker": lambda c, v: synth.shaker("shaker", c["tune"], c["decay"], v),
+    "perc": lambda c, v: synth.perc(c.get("sound", "rim"), c["tune"], c["decay"], v),
 }
+# How many different takes each drum rotates through (kicks stay identical, like a producer's)
+DRUM_VARIATIONS = {"kick": 1, "snare": 3, "clap": 4, "hat": 4, "openhat": 2, "shaker": 4, "perc": 3}
 
 
 # Gain staging: the level each track sits at when its volume slider is 0 dB.
 TRIM = {"clap": 4, "hat": 6, "openhat": 5, "shaker": 5, "perc": 5, "snare": 2,
         "melody": 4, "bass": -2, "chords": 1}
+
+
+# Measured so every chord/melody sound plays at a similar loudness at the same volume
+# (recorded instruments peak high on the attack, sustained synths don't).
+TONE_GAIN = {"pluck": 8.0, "glock": 5.5, "kalimba": 5.3, "piano": 3.1, "pad": 2.6, "lead": 2.2,
+             "marimba": 0.0, "vibes": -0.4, "rhodes": -2.4, "sax": -2.5, "bell": -3.2,
+             "flute": -3.8, "organ": -6.6}
 
 
 def _bright_lp(b):
@@ -530,10 +539,17 @@ def render(settings, outdir, progress=None, tag_path=None):
         ev = kick_ev if name == "kick" else drum_events(song, name)
         if not ev:
             continue
-        hit = DRUM_FN[name](cfg)
+        takes = [DRUM_FN[name](cfg, k) for k in range(DRUM_VARIATIONS.get(name, 1))]
+        rng = np.random.default_rng(len(name) * 101 + int(s.get("seed", 0)))
         buf = np.zeros(N, np.float32)
+        last = -1
         for t, v in ev:
-            _place(buf, hit, t, v)
+            # pick a different take than last time, the way samplers round-robin
+            k = int(rng.integers(len(takes)))
+            if len(takes) > 1 and k == last:
+                k = (k + 1) % len(takes)
+            last = k
+            _place(buf, takes[k], t, v)
         if name not in ("kick",):
             buf = fx.filt(buf, "highpass", 300 if name in ("hat", "openhat", "shaker") else 90)
         finish(name, buf, cfg, pan=cfg["pan"])
@@ -566,7 +582,7 @@ def render(settings, outdir, progress=None, tag_path=None):
         for t, n, dur, v in ev:
             y = synth.tone_note(cfg["sound"], round(theory.midi_to_hz(n), 3), round(dur, 3),
                                 round(cfg["brightness"], 2))
-            _place(buf, y, t, v * 0.45)
+            _place(buf, y, t, v * 0.45 * fx.db(TONE_GAIN.get(cfg["sound"], 0)))
         buf = fx.filt(fx.filt(buf, "highpass", 140), "lowpass", _bright_lp(cfg["brightness"]))
         finish("chords", buf, cfg, width=cfg["stereo"], sidechain=cfg.get("sidechain"))
         midi_tracks["chords"] = (2, [(t, d, n, v) for t, n, d, v in ev])
@@ -580,7 +596,7 @@ def render(settings, outdir, progress=None, tag_path=None):
         for t, n, dur, v in ev:
             y = synth.tone_note(cfg["sound"], round(theory.midi_to_hz(n), 3), round(dur, 3),
                                 round(cfg["brightness"], 2))
-            _place(buf, y, t, v)
+            _place(buf, y, t, v * fx.db(TONE_GAIN.get(cfg["sound"], 0)))
         buf = fx.filt(fx.filt(buf, "highpass", 220), "lowpass", _bright_lp(cfg["brightness"]))
         finish("melody", buf, cfg, width=0.3, sidechain=cfg.get("sidechain"))
         midi_tracks["melody"] = (3, [(t, d, n, v) for t, n, d, v in ev])

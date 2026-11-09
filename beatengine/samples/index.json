@@ -1,0 +1,313 @@
+{
+ "source": "VCSL (https://github.com/sgossner/VCSL), CC0 1.0 public domain",
+ "sr": 44100,
+ "pitched": {
+  "piano": {
+   "36": {
+    "file": "piano/36.wav",
+    "pitch": 36.0
+   },
+   "42": {
+    "file": "piano/42.wav",
+    "pitch": 41.95
+   },
+   "48": {
+    "file": "piano/48.wav",
+    "pitch": 47.95
+   },
+   "54": {
+    "file": "piano/54.wav",
+    "pitch": 53.95
+   },
+   "60": {
+    "file": "piano/60.wav",
+    "pitch": 59.95
+   },
+   "66": {
+    "file": "piano/66.wav",
+    "pitch": 65.95
+   },
+   "72": {
+    "file": "piano/72.wav",
+    "pitch": 72.0
+   },
+   "78": {
+    "file": "piano/78.wav",
+    "pitch": 78.0
+   },
+   "83": {
+    "file": "piano/83.wav",
+    "pitch": 83.0
+   },
+   "90": {
+    "file": "piano/90.wav",
+    "pitch": 90.0
+   },
+   "96": {
+    "file": "piano/96.wav",
+    "pitch": 96.0
+   }
+  },
+  "marimba": {
+   "41": {
+    "file": "marimba/41.wav",
+    "pitch": 40.95
+   },
+   "48": {
+    "file": "marimba/48.wav",
+    "pitch": 47.95
+   },
+   "55": {
+    "file": "marimba/55.wav",
+    "pitch": 55.0
+   },
+   "59": {
+    "file": "marimba/59.wav",
+    "pitch": 59.0
+   },
+   "65": {
+    "file": "marimba/65.wav",
+    "pitch": 65.0
+   },
+   "72": {
+    "file": "marimba/72.wav",
+    "pitch": 72.05
+   },
+   "79": {
+    "file": "marimba/79.wav",
+    "pitch": 79.0
+   },
+   "83": {
+    "file": "marimba/83.wav",
+    "pitch": 83.0
+   },
+   "89": {
+    "file": "marimba/89.wav",
+    "pitch": 88.95
+   },
+   "96": {
+    "file": "marimba/96.wav",
+    "pitch": 96.0
+   }
+  },
+  "vibes": {
+   "53": {
+    "file": "vibes/53.wav",
+    "pitch": 53.0
+   },
+   "57": {
+    "file": "vibes/57.wav",
+    "pitch": 57.0
+   },
+   "64": {
+    "file": "vibes/64.wav",
+    "pitch": 64.0
+   },
+   "71": {
+    "file": "vibes/71.wav",
+    "pitch": 71.0
+   },
+   "77": {
+    "file": "vibes/77.wav",
+    "pitch": 77.0
+   },
+   "81": {
+    "file": "vibes/81.wav",
+    "pitch": 81.0
+   },
+   "88": {
+    "file": "vibes/88.wav",
+    "pitch": 88.0
+   }
+  },
+  "glock": {
+   "79": {
+    "file": "glock/79.wav",
+    "pitch": 79.1
+   },
+   "84": {
+    "file": "glock/84.wav",
+    "pitch": 84.1
+   },
+   "91": {
+    "file": "glock/91.wav",
+    "pitch": 91.1
+   },
+   "96": {
+    "file": "glock/96.wav",
+    "pitch": 96.15
+   },
+   "103": {
+    "file": "glock/103.wav",
+    "pitch": 103.15
+   },
+   "108": {
+    "file": "glock/108.wav",
+    "pitch": 108.25
+   }
+  },
+  "kalimba": {
+   "43": {
+    "file": "kalimba/43.wav",
+    "pitch": 43.0
+   },
+   "47": {
+    "file": "kalimba/47.wav",
+    "pitch": 47.0
+   },
+   "51": {
+    "file": "kalimba/51.wav",
+    "pitch": 51.3
+   },
+   "55": {
+    "file": "kalimba/55.wav",
+    "pitch": 55.25
+   },
+   "61": {
+    "file": "kalimba/61.wav",
+    "pitch": 60.55
+   },
+   "65": {
+    "file": "kalimba/65.wav",
+    "pitch": 65.4
+   },
+   "70": {
+    "file": "kalimba/70.wav",
+    "pitch": 70.5
+   },
+   "74": {
+    "file": "kalimba/74.wav",
+    "pitch": 73.5
+   },
+   "79": {
+    "file": "kalimba/79.wav",
+    "pitch": 79.3
+   },
+   "83": {
+    "file": "kalimba/83.wav",
+    "pitch": 82.55
+   },
+   "88": {
+    "file": "kalimba/88.wav",
+    "pitch": 87.8
+   },
+   "92": {
+    "file": "kalimba/92.wav",
+    "pitch": 92.1
+   }
+  },
+  "flute": {
+   "65": {
+    "file": "flute/65.wav",
+    "pitch": 65.05
+   },
+   "68": {
+    "file": "flute/68.wav",
+    "pitch": 68.05
+   },
+   "72": {
+    "file": "flute/72.wav",
+    "pitch": 72.0
+   },
+   "76": {
+    "file": "flute/76.wav",
+    "pitch": 76.0
+   },
+   "80": {
+    "file": "flute/80.wav",
+    "pitch": 80.0
+   },
+   "84": {
+    "file": "flute/84.wav",
+    "pitch": 84.0
+   },
+   "88": {
+    "file": "flute/88.wav",
+    "pitch": 88.05
+   }
+  },
+  "sax": {
+   "44": {
+    "file": "sax/44.wav",
+    "pitch": 44.0
+   },
+   "48": {
+    "file": "sax/48.wav",
+    "pitch": 48.0
+   },
+   "52": {
+    "file": "sax/52.wav",
+    "pitch": 52.0
+   },
+   "56": {
+    "file": "sax/56.wav",
+    "pitch": 56.0
+   },
+   "60": {
+    "file": "sax/60.wav",
+    "pitch": 60.0
+   },
+   "64": {
+    "file": "sax/64.wav",
+    "pitch": 64.0
+   },
+   "68": {
+    "file": "sax/68.wav",
+    "pitch": 68.0
+   },
+   "72": {
+    "file": "sax/72.wav",
+    "pitch": 72.0
+   },
+   "76": {
+    "file": "sax/76.wav",
+    "pitch": 76.0
+   },
+   "80": {
+    "file": "sax/80.wav",
+    "pitch": 80.0
+   },
+   "84": {
+    "file": "sax/84.wav",
+    "pitch": 84.0
+   }
+  }
+ },
+ "hits": {
+  "clap": [
+   "clap/1.wav",
+   "clap/2.wav",
+   "clap/3.wav",
+   "clap/4.wav"
+  ],
+  "shaker": [
+   "shaker/1.wav",
+   "shaker/2.wav",
+   "shaker/3.wav",
+   "shaker/4.wav"
+  ],
+  "conga": [
+   "conga/1.wav",
+   "conga/2.wav",
+   "conga/3.wav"
+  ],
+  "bongo": [
+   "bongo/1.wav",
+   "bongo/2.wav",
+   "bongo/3.wav"
+  ],
+  "cowbell": [
+   "cowbell/1.wav",
+   "cowbell/2.wav"
+  ],
+  "wood": [
+   "wood/1.wav",
+   "wood/2.wav",
+   "wood/3.wav"
+  ],
+  "tambourine": [
+   "tambourine/1.wav",
+   "tambourine/2.wav"
+  ]
+ }
+}
