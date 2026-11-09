@@ -60,12 +60,25 @@ class AppState extends ChangeNotifier {
 
   // tags
   J tag = {'text': '', 'voice': '', 'style': 'clean', 'pitch': 0.0, 'swell': true, 'impact': false, 'riser': false};
-  J? lastTag;
+  J? draftTag; // the latest preview, not saved yet
+  List<J> savedTags = []; // the tag library
   String? ownVoicePath;
   List<Voice> voices = [];
   List<J> ideas = [];
   bool tagBusy = false;
   String tagStatus = '';
+  // hearing a tag on the current beat
+  bool tagPreviewBusy = false;
+  String tagPreviewStatus = '';
+  String? tagPreviewWav;
+
+  static const tagPlaces = {
+    'start': 'At the start',
+    'hooks': 'Right before each drop',
+    'verses': 'Start of each verse',
+    'every8': 'Every 8 bars',
+    'end': 'In the outro',
+  };
 
   static const useLabels = {
     'style': 'Style', 'tempo': 'Tempo', 'key': 'Key', 'groove': 'Drum groove',
@@ -95,12 +108,24 @@ class AppState extends ChangeNotifier {
       }
       final savedTag = _prefs!.getString('tag');
       if (savedTag != null) {
-        final j = jsonDecode(savedTag) as Map<String, dynamic>;
-        tag.addAll((j['tag'] as Map).cast<String, dynamic>());
-        lastTag = (j['last'] as Map?)?.cast<String, dynamic>();
-        if (lastTag != null && !File('${lastTag!['wav']}').existsSync()) lastTag = null;
+        try {
+          final j = jsonDecode(savedTag) as Map<String, dynamic>;
+          tag.addAll((j['tag'] as Map).cast<String, dynamic>());
+          draftTag = (j['draft'] as Map?)?.cast<String, dynamic>();
+          if (draftTag != null && !File('${draftTag!['wav']}').existsSync()) draftTag = null;
+          final own = j['own'] as String?;
+          if (own != null && File(own).existsSync()) ownVoicePath = own;
+        } catch (_) {} // an old or damaged save: start the tag tab fresh
+      }
+      final savedResult = _prefs!.getString('result');
+      if (savedResult != null) {
+        try {
+          final r = (jsonDecode(savedResult) as Map).cast<String, dynamic>();
+          if (File('${r['wav']}').existsSync()) result = r;
+        } catch (_) {}
       }
       await loadVoices();
+      await loadTags();
       ready = true;
     } catch (e) {
       startupError = '$e';
@@ -140,7 +165,7 @@ class AppState extends ChangeNotifier {
   }
 
   void tagChanged() {
-    _prefs?.setString('tag', jsonEncode({'tag': tag, 'last': lastTag}));
+    _prefs?.setString('tag', jsonEncode({'tag': tag, 'draft': draftTag, 'own': ownVoicePath}));
     notifyListeners();
   }
 
@@ -216,6 +241,8 @@ class AppState extends ChangeNotifier {
       result = r;
       s = (r['settings'] as Map).cast<String, dynamic>();
       _prefs?.setString('settings', jsonEncode(s));
+      _prefs?.setString('result', jsonEncode({...r, 'settings': null}));
+      tagPreviewWav = null; // a new beat: an old preview no longer matches
       videoPath = r['video'] as String?;
       if (r['needs_video'] == true) {
         status = 'Making the video…';
@@ -340,6 +367,12 @@ class AppState extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    if (ownVoicePath != null && !File(ownVoicePath!).existsSync()) {
+      ownVoicePath = null;
+      tagStatus = 'Your recording is gone. Record or upload it again.';
+      tagChanged();
+      return;
+    }
     tagBusy = true;
     tagStatus = 'Recording the voice…';
     notifyListeners();
@@ -352,6 +385,7 @@ class AppState extends ChangeNotifier {
       if (voiceFile == null) {
         final v = voices.firstWhere((v) => v.key == tag['voice'],
             orElse: () => throw EngineException('No voice available. Record or upload your own voice.'));
+        body['voice_label'] = v.label;
         if (v.source == 'native') {
           voiceFile = await Media.ttsToFile(text, v.id, engine.tmpPath('wav'));
           if (voiceFile == null) throw EngineException("The phone's voice didn't respond. Try another voice.");
@@ -372,15 +406,169 @@ class AppState extends ChangeNotifier {
         if (wav == null) rethrow;
         r = await engine.runJob('/api/tags/make', {...body, 'voice_file': wav});
       }
-      lastTag = r;
-      sub('tag')['id'] = r['id'];
-      changed();
-      tagStatus = "Done: a ${r['duration']}s tag. It's on your beats now. Make a beat to hear it in place.";
+      draftTag = r;
+      tagStatus = 'Here\'s your preview. Save it to use it on your beats, or change something and try again.';
       tagChanged();
     } catch (e) {
       tagStatus = "Couldn't make the tag: $e";
     }
     tagBusy = false;
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- tag library
+  Future<void> loadTags() async {
+    try {
+      final j = await engine.get('/api/tags/list') as Map;
+      savedTags = (j['tags'] as List).map((e) => (e as Map).cast<String, dynamic>()).toList();
+    } catch (_) {
+      savedTags = [];
+    }
+    // the tag picked for beats was deleted or lost: stop using it
+    final cfg = sub('tag');
+    if (cfg['id'] != null && !savedTags.any((t) => t['id'] == cfg['id'])) {
+      cfg['id'] = null;
+      _prefs?.setString('settings', jsonEncode(s));
+    }
+  }
+
+  J? get activeTag {
+    final id = sub('tag')['id'];
+    for (final t in savedTags) {
+      if (t['id'] == id) return t;
+    }
+    return null;
+  }
+
+  bool get tagOnBeats => activeTag != null && sub('tag')['mute'] != true;
+
+  Future<void> saveDraft(String name) async {
+    final d = draftTag;
+    if (d == null) return;
+    try {
+      final saved = (await engine.post('/api/tags/save', {'id': d['id'], 'name': name}) as Map).cast<String, dynamic>();
+      draftTag = null;
+      await loadTags();
+      useTag('${saved['id']}', notify: false);
+      tagStatus = 'Saved "${saved['name']}". It\'s now on your beats. Choose where below.';
+    } catch (e) {
+      tagStatus = "Couldn't save the tag: $e";
+    }
+    tagChanged();
+  }
+
+  Future<void> discardDraft() async {
+    final d = draftTag;
+    draftTag = null;
+    tagStatus = '';
+    tagChanged();
+    if (d != null) {
+      try {
+        await engine.post('/api/tags/delete', {'id': d['id']});
+      } catch (_) {}
+    }
+  }
+
+  Future<void> renameTag(String id, String name) async {
+    try {
+      await engine.post('/api/tags/rename', {'id': id, 'name': name});
+      await loadTags();
+    } catch (e) {
+      tagStatus = "Couldn't rename the tag: $e";
+    }
+    notifyListeners();
+  }
+
+  Future<void> deleteTag(String id) async {
+    try {
+      await engine.post('/api/tags/delete', {'id': id});
+    } catch (_) {}
+    if (sub('tag')['id'] == id) tagPreviewWav = null;
+    await loadTags();
+    changed();
+  }
+
+  /// Pick which saved tag goes on beats (null = none).
+  void useTag(String? id, {bool notify = true}) {
+    final cfg = sub('tag');
+    cfg['id'] = id;
+    cfg['mute'] = false;
+    final places = cfg['places'];
+    if (places is! List || places.isEmpty) cfg['places'] = ['start'];
+    tagPreviewWav = null;
+    if (notify) {
+      changed();
+    } else {
+      _prefs?.setString('settings', jsonEncode(s));
+    }
+  }
+
+  void setTagOnBeats(bool on) {
+    sub('tag')['mute'] = !on;
+    tagPreviewWav = null;
+    changed();
+  }
+
+  void toggleTagPlace(String place, bool on) {
+    final cfg = sub('tag');
+    final places = List<String>.from((cfg['places'] as List?)?.map((e) => '$e') ?? const []);
+    if (on && !places.contains(place)) places.add(place);
+    if (!on) places.remove(place);
+    cfg['places'] = [for (final p in tagPlaces.keys) if (places.contains(p)) p];
+    tagPreviewWav = null;
+    changed();
+  }
+
+  void tagMixChanged() {
+    tagPreviewWav = null;
+    changed();
+  }
+
+  /// Hear the chosen tag on the current beat without re-making the beat.
+  Future<void> previewTagOnBeat() async {
+    final t = activeTag;
+    final r = result;
+    if (tagPreviewBusy || t == null) return;
+    if (r == null || !File('${r['wav']}').existsSync()) {
+      tagPreviewStatus = 'Make a beat on the Create tab first, then hear your tag on it here.';
+      notifyListeners();
+      return;
+    }
+    final cfg = sub('tag');
+    if ((cfg['places'] as List?)?.isEmpty ?? true) {
+      tagPreviewStatus = 'Pick at least one place for the tag.';
+      notifyListeners();
+      return;
+    }
+    tagPreviewBusy = true;
+    tagPreviewStatus = 'Laying the tag over your beat…';
+    notifyListeners();
+    try {
+      final p = await engine.runJob('/api/tags/preview', {
+        'folder': r['folder'], 'id': t['id'], 'places': cfg['places'],
+        'volume': cfg['volume'], 'duck': cfg['duck'],
+      });
+      tagPreviewWav = '${p['wav']}';
+      final n = p['count'] as int? ?? 0;
+      tagPreviewStatus = 'Your tag plays $n time${n == 1 ? '' : 's'} in this preview. '
+          'Happy? Press "Add to this beat" to make it for real.';
+    } catch (e) {
+      tagPreviewStatus = "Couldn't make the preview: $e";
+    }
+    tagPreviewBusy = false;
+    notifyListeners();
+  }
+
+  /// Re-make the current beat with the tag in it (same settings, so the same beat).
+  Future<void> addTagToBeat() async {
+    if (!tagOnBeats) setTagOnBeats(true);
+    tagPreviewStatus = 'Making your beat with the tag…';
+    notifyListeners();
+    await make();
+    final n = result?['tags_placed'] as int? ?? 0;
+    tagPreviewStatus = n > 0
+        ? 'Done: your tag is in the beat ($n time${n == 1 ? '' : 's'}). Share it from the Create tab.'
+        : status;
     notifyListeners();
   }
 }

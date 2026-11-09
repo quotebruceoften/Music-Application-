@@ -17,7 +17,10 @@ SR = synth.SR
 HIT_CHARS = set("xo")
 FORMATS = {"full": None, "tiktok15": 15, "tiktok30": 30, "tiktok60": 60}
 LENGTH_MIN, LENGTH_MAX = 3, 10  # minutes, for long full-length beats
-TAG_POSITIONS = ["start", "start+hooks", "every8"]
+TAG_POSITIONS = ["start", "start+hooks", "every8"]  # older single-choice setting
+# Where a producer tag can go; any combination is allowed
+TAG_PLACES = ["start", "hooks", "verses", "every8", "end"]
+_LEGACY_PLACES = {"start": ["start"], "start+hooks": ["start", "hooks"], "every8": ["start", "every8"]}
 BASS_CHARS = set("xo5^")
 
 
@@ -139,8 +142,14 @@ def sanitize(settings):
     s["producer"] = str(s.get("producer") or "")[:40]
     s["title"] = str(s.get("title") or "")[:60]
     tg = s.get("tag") or {}
-    s["tag"] = {"id": (str(tg.get("id"))[:40] if tg.get("id") else None),
-                "position": tg.get("position") if tg.get("position") in TAG_POSITIONS else "start",
+    position = tg.get("position") if tg.get("position") in TAG_POSITIONS else "start"
+    places = tg.get("places")
+    if isinstance(places, list):
+        places = [p for p in TAG_PLACES if p in places]
+    else:
+        places = list(_LEGACY_PLACES[position])
+    s["tag"] = {"id": (os.path.basename(str(tg.get("id")))[:40] if tg.get("id") else None),
+                "position": position, "places": places,
                 "volume": _num(tg.get("volume"), -20, 6, -1), "duck": _num(tg.get("duck"), 0, 1, 0.5),
                 "mute": bool(tg.get("mute"))}
 
@@ -507,20 +516,100 @@ def _load_tag(path):
     return y.astype(np.float32)
 
 
-def tag_times(song, tag_len, position):
-    times = [0.05]
-    if position == "start+hooks":
-        for sec in song.sections:
-            if sec["name"] == "hook" and sec["i"] > 0:
-                t = sec["start"] * song.bar - tag_len + 0.25  # lands right on the drop
-                if t > times[-1] + tag_len:
-                    times.append(t)
-    elif position == "every8":
+def tag_times(song, tag_len, places):
+    """Start times (seconds) for the producer tag. `places` is a list from TAG_PLACES
+    (an old single 'position' string also works). Tags never overlap each other."""
+    if isinstance(places, str):
+        places = _LEGACY_PLACES.get(places, ["start"])
+    end = song.total_bars * song.bar
+    want = []
+    if "start" in places:
+        want.append(0.05)
+    for sec in song.sections:
+        t0 = sec["start"] * song.bar
+        if "hooks" in places and sec["name"] == "hook" and sec["i"] > 0:
+            want.append(t0 - tag_len + 0.25)  # the last word lands right on the drop
+        if "verses" in places and sec["name"] == "verse":
+            want.append(t0 + 0.05)
+    if "every8" in places:
         t = 8 * song.bar
-        while t < song.total_bars * song.bar - tag_len:
-            times.append(t)
+        while t < end - tag_len:
+            want.append(t)
             t += 8 * song.bar
+    if "end" in places and song.sections:
+        last = song.sections[-1]
+        t0 = last["start"] * song.bar if last["name"] == "outro" else end - min(8, last["bars"]) * song.bar
+        want.append(t0 + 0.05)
+    times = []
+    for t in sorted(set(round(x, 3) for x in want)):
+        if t < 0 or t + tag_len > end + 1.0:
+            continue
+        if times and t < times[-1] + tag_len + 0.3:
+            continue
+        times.append(t)
     return times
+
+
+def tag_duck_curve(tag, duck):
+    """Gain curve that dips the beat under one tag, starting a moment before it."""
+    pre, tail = int(0.15 * SR), int(0.4 * SR)
+    lvl = np.concatenate([np.zeros(pre, np.float32), np.abs(tag).max(axis=1), np.zeros(tail, np.float32)])
+    env = fx.filt(lvl, "lowpass", 6)
+    env = np.clip(env / (env.max() + 1e-9) * 3, 0, 1)
+    return fx.db(-8 * duck * env).astype(np.float32), pre
+
+
+def lay_tag(buf, tag, starts, duck):
+    """Duck `buf` (n, 2) under each tag and add the tag, in place."""
+    n = len(buf)
+    g, pre = tag_duck_curve(tag, duck)
+    for a in starts:
+        lo = max(0, a - pre)
+        hi = min(n, a - pre + len(g))
+        if hi > lo:
+            buf[lo:hi] *= g[lo - (a - pre): hi - (a - pre), None]
+        e = min(n, a + len(tag))
+        if e > a:
+            buf[a:e] += tag[: e - a]
+
+
+def write_tag_stem(path, n, tag, starts):
+    """The tag's own stem: silence with the tag at each place, written piece by piece."""
+    w = wavfile.Writer(path, SR, 2, n)
+    step = 1 << 18
+    for a in range(0, n, step):
+        b = min(n, a + step)
+        blk = np.zeros((b - a, 2), np.float32)
+        for t in starts:
+            lo, hi = max(a, t), min(b, t + len(tag))
+            if hi > lo:
+                blk[lo - a: hi - a] += tag[lo - t: hi - t]
+        w.write(blk)
+    w.close()
+
+
+def preview_tag(beat_dir, tag_path, places, volume=-1.0, duck=0.5, out_name="tag_preview.wav"):
+    """Lay a tag over an already-made beat (no re-render), so it can be heard in place.
+    Uses the beat's saved settings to find the hooks and verses."""
+    with open(os.path.join(beat_dir, "settings.json"), encoding="utf-8") as f:
+        settings = sanitize(json.load(f))
+    song = Song(settings)
+    sr, beat = wavfile.read(os.path.join(beat_dir, "beat.wav"))
+    beat = beat.astype(np.float32)
+    if beat.ndim == 1:
+        beat = np.stack([beat, beat], axis=1)
+    tag = _load_tag(tag_path)
+    peak = float(np.max(np.abs(beat))) or 1.0
+    tag = tag * np.float32(peak * fx.db(volume) / (np.max(np.abs(tag)) + 1e-9))
+    times = tag_times(song, len(tag) / SR, places)
+    lay_tag(beat, tag, [int(t * SR) for t in times], duck)
+    beat = dsp.blocks(beat, lambda seg: fx.limiter(seg, -1.0), int(0.25 * SR))
+    out = os.path.join(beat_dir, out_name)
+    w = wavfile.Writer(out, SR, 2, len(beat), pcm16=True)
+    for a in range(0, len(beat), 1 << 18):
+        w.write(beat[a:a + (1 << 18)])
+    w.close()
+    return {"wav": out, "times": [round(t, 2) for t in times], "count": len(times)}
 
 
 def make_video(audio_path, out_path, title, subtitle):
@@ -754,22 +843,15 @@ def render(settings, outdir, progress=None, tag_path=None):
 
     # ---- producer tag (the beat ducks a little underneath it)
     tag_info = None
-    if tag_path and os.path.exists(tag_path) and not s["tag"]["mute"]:
+    if tag_path and os.path.exists(tag_path) and not s["tag"]["mute"] and s["tag"]["places"]:
         tag = _load_tag(tag_path)
         peak = np.max(np.abs(mix)) or 1.0
-        tag = tag * (peak * fx.db(s["tag"]["volume"]) / (np.max(np.abs(tag)) + 1e-9))
-        tbus = np.zeros_like(mix)
-        times = tag_times(song, len(tag) / SR, s["tag"]["position"])
-        for t in times:
-            a = int(t * SR)
-            b = min(N, a + len(tag))
-            tbus[a:b] += tag[: b - a]
-        env = fx.filt(np.abs(tbus).max(axis=1), "lowpass", 6)
-        env = np.clip(env / (env.max() + 1e-9) * 3, 0, 1)
-        mix *= fx.db(-8 * s["tag"]["duck"] * env)[:, None]
-        mix += tbus
+        tag = tag * np.float32(peak * fx.db(s["tag"]["volume"]) / (np.max(np.abs(tag)) + 1e-9))
+        times = tag_times(song, len(tag) / SR, s["tag"]["places"])
+        starts = [int(t * SR) for t in times]
+        lay_tag(mix, tag, starts, s["tag"]["duck"])
         path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_producer_tag.wav")
-        wavfile.write(path, SR, tbus)
+        write_tag_stem(path, N, tag, starts)
         stems.append(path)
         tag_info = len(times)
 

@@ -465,8 +465,18 @@ function buildTag() {
     const u = $("tagUse"); u.innerHTML = "";
     const on = {v: S.tag.id === T.last.id};
     u.append(check("Put this tag on my beats", on, "v", () => { S.tag.id = on.v ? T.last.id : null; save(); }),
-      select("Where", S.tag, "position", {start: "At the start", "start+hooks": "Start + before each hook", every8: "Every 8 bars"}),
-      slider("Tag volume", S.tag, "volume", -20, 6, 1, dB), slider("Duck the beat under the tag", S.tag, "duck", 0, 1, 0.05, pct));
+      el("div", {class: "note"}, "Where in the song (pick any):"));
+    const PLACES = {start: "At the start", hooks: "Right before each drop", verses: "Start of each verse",
+                    every8: "Every 8 bars", end: "In the outro"};
+    if (!Array.isArray(S.tag.places)) S.tag.places = ["start"];
+    Object.entries(PLACES).forEach(([k, label]) => {
+      const box = {v: S.tag.places.includes(k)};
+      u.append(check(label, box, "v", () => {
+        S.tag.places = Object.keys(PLACES).filter(p => p === k ? box.v : S.tag.places.includes(p));
+        save();
+      }));
+    });
+    u.append(slider("Tag volume", S.tag, "volume", -20, 6, 1, dB), slider("Duck the beat under the tag", S.tag, "duck", 0, 1, 0.05, pct));
   }
 }
 

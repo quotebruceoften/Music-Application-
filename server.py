@@ -25,9 +25,10 @@ from beatengine import GENRES, OPTIONS, render, sanitize, theory
 from beatengine import analyze as inspire
 from beatengine import media
 from beatengine import tags as tagger
+from beatengine.engine import preview_tag
 from beatengine.presets import DRUMS, SECTION_TYPES, TRACKS
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 DATA = os.path.abspath(os.environ.get("BEATMAKER_DATA", os.path.join(os.path.dirname(__file__), "renders")))
 RENDERS, REFS, TAGS, TMP = (os.path.join(DATA, d) for d in ("beats", "refs", "tags", "tmp"))
 KEEP_RENDERS = 20
@@ -94,7 +95,8 @@ def do_render(progress, settings):
     _cleanup_renders()
     return {"folder": out, "wav": r["wav"], "mp3": r["mp3"], "midi": r["midi"], "stems": r["stems"],
             "video": r.get("video"), "duration": r["duration"], "lufs": r["lufs"], "peak_db": r["peak_db"],
-            "settings": r["settings"], "arrangement": r.get("arrangement"), "needs_video": bool(
+            "settings": r["settings"], "arrangement": r.get("arrangement"),
+            "tags_placed": r.get("tags_placed") or 0, "needs_video": bool(
                 r["settings"].get("export_video") and not r.get("video"))}
 
 
@@ -128,20 +130,107 @@ def do_fetch(progress, url):
     return {"path": path, "name": name}
 
 
+KEEP_DRAFTS = 6  # unsaved tag previews kept (saved tags are never cleaned up)
+
+
+def _tag_meta_path(tid):
+    return os.path.join(TAGS, os.path.basename(str(tid)), "meta.json")
+
+
+def _read_tag(tid):
+    """A tag's info, or None if it's missing or its audio is gone."""
+    tid = os.path.basename(str(tid or ""))
+    folder = os.path.join(TAGS, tid)
+    wav = os.path.join(folder, "tag.wav")
+    if not tid or not os.path.exists(wav):
+        return None
+    meta = {}
+    try:
+        with open(_tag_meta_path(tid), encoding="utf-8") as f:
+            meta = json.load(f)
+    except (OSError, ValueError):
+        meta = {"saved": True, "name": "Tag", "created": os.path.getmtime(wav)}  # tags from older versions
+    meta.update({"id": tid, "wav": wav})
+    mp3 = os.path.join(folder, "tag.mp3")
+    meta["mp3"] = mp3 if os.path.exists(mp3) else None
+    return meta
+
+
+def _write_tag(meta):
+    keep = {k: v for k, v in meta.items() if k not in ("wav", "mp3")}
+    tmp = _tag_meta_path(meta["id"]) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(keep, f, indent=1)
+    os.replace(tmp, _tag_meta_path(meta["id"]))  # atomic, so a crash can't corrupt it
+
+
+def list_tags(saved=True):
+    out = []
+    if os.path.isdir(TAGS):
+        for tid in os.listdir(TAGS):
+            m = _read_tag(tid)
+            if m and bool(m.get("saved")) == saved:
+                out.append(m)
+    return sorted(out, key=lambda m: m.get("created", 0), reverse=True)
+
+
+def _cleanup_drafts():
+    for m in list_tags(saved=False)[KEEP_DRAFTS:]:
+        shutil.rmtree(os.path.join(TAGS, m["id"]), ignore_errors=True)
+    if os.path.isdir(TAGS):  # folders left behind by a failed run
+        for tid in os.listdir(TAGS):
+            d = os.path.join(TAGS, tid)
+            if os.path.isdir(d) and not os.path.exists(os.path.join(d, "tag.wav")) \
+                    and time.time() - os.path.getmtime(d) > 3600:
+                shutil.rmtree(d, ignore_errors=True)
+
+
 def do_tag(progress, p):
     progress("Processing your voice…")
+    text = str(p.get("text") or "").strip()[:80]
+    voice_file = p.get("voice_file") or None
+    if voice_file and not os.path.exists(voice_file):
+        raise ValueError("Your recording couldn't be found. Record or upload it again.")
+    if not voice_file and not text:
+        raise ValueError("Type your tag words first.")
     tid = uuid.uuid4().hex[:10]
     out = os.path.join(TAGS, tid)
+    style = p.get("style", "clean")
     try:
-        r = tagger.make_tag(out, style=p.get("style", "clean"), text=p.get("text"), engine=p.get("engine"),
-                            voice=p.get("voice"), voice_file=p.get("voice_file") or None,
+        r = tagger.make_tag(out, style=style, text=text, engine=p.get("engine"),
+                            voice=p.get("voice"), voice_file=voice_file,
                             pitch=float(p.get("pitch") or 0), swell=bool(p.get("swell")),
                             impact=bool(p.get("impact")), riser=bool(p.get("riser")),
                             bpm=float(p.get("bpm") or 120))
     except Exception:
         shutil.rmtree(out, ignore_errors=True)
         raise
-    return {"id": tid, "wav": r["wav"], "mp3": r["mp3"], "duration": r["duration"]}
+    meta = {"id": tid, "saved": False, "name": text or "My voice", "text": text,
+            "style": style if style in tagger.STYLES else "clean",
+            "voice": "Your voice" if voice_file else str(p.get("voice_label") or p.get("voice") or ""),
+            "pitch": float(p.get("pitch") or 0), "swell": bool(p.get("swell")),
+            "impact": bool(p.get("impact")), "riser": bool(p.get("riser")),
+            "duration": r["duration"], "created": time.time()}
+    _write_tag(meta)
+    _cleanup_drafts()
+    return _read_tag(tid)
+
+
+def do_tag_preview(progress, p):
+    progress("Laying the tag over your beat…")
+    folder = os.path.abspath(str(p.get("folder") or ""))
+    if not folder.startswith(os.path.abspath(RENDERS) + os.sep) or not os.path.exists(os.path.join(folder, "beat.wav")):
+        raise ValueError("That beat is gone. Make a beat first, then preview the tag on it.")
+    tag = _read_tag(p.get("id"))
+    if not tag:
+        raise ValueError("That tag can't be found. Make or pick another one.")
+    places = p.get("places")
+    if not isinstance(places, list) or not places:
+        raise ValueError("Pick at least one place for the tag.")
+    r = preview_tag(folder, tag["wav"], places, float(p.get("volume", -1)), float(p.get("duck", 0.5)))
+    if not r["count"]:
+        raise ValueError("None of those spots fit in this beat. Pick another place for the tag.")
+    return r
 
 
 # ---------------------------------------------------------------- HTTP
@@ -198,6 +287,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not job:
                     return self._send(404, {"error": "Unknown job"})
                 return self._send(200, job)
+            if u.path == "/api/tags/list":
+                return self._send(200, {"tags": list_tags(saved=True)})
             if u.path == "/api/tags/voices":
                 return self._send(200, {"voices": tagger.voices()})
             if u.path == "/api/tags/suggest":
@@ -231,6 +322,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"settings": sanitize(s), "notes": notes})
             if self.path == "/api/tags/make":
                 return self._send(200, start_job(do_tag, b))
+            if self.path == "/api/tags/preview":
+                return self._send(200, start_job(do_tag_preview, b))
+            if self.path in ("/api/tags/save", "/api/tags/rename"):
+                m = _read_tag(b.get("id"))
+                if not m:
+                    return self._send(404, {"error": "That tag can't be found."})
+                name = str(b.get("name") or "").strip()[:40]
+                m["name"] = name or m.get("name") or "My tag"
+                m["saved"] = True
+                _write_tag(m)
+                return self._send(200, _read_tag(m["id"]))
+            if self.path == "/api/tags/delete":
+                tid = os.path.basename(str(b.get("id") or ""))
+                if tid and os.path.isdir(os.path.join(TAGS, tid)):
+                    shutil.rmtree(os.path.join(TAGS, tid), ignore_errors=True)
+                return self._send(200, {"ok": True})
             return self._send(404, {"error": "Not found"})
         except Exception as e:  # noqa: BLE001
             traceback.print_exc()
