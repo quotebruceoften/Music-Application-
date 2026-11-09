@@ -646,7 +646,7 @@ def make_video(audio_path, out_path, title, subtitle):
     return out_path if p.returncode == 0 and os.path.exists(out_path) else None
 
 
-def render(settings, outdir, progress=None, tag_path=None):
+def render(settings, outdir, progress=None, tag_path=None, stems=True):
     def say(msg):
         if progress:
             progress(msg)
@@ -654,7 +654,11 @@ def render(settings, outdir, progress=None, tag_path=None):
     s = sanitize(settings)
     song = Song(s)
     N = song.N
-    os.makedirs(os.path.join(outdir, "stems"), exist_ok=True)
+    os.makedirs(outdir, exist_ok=True)
+    # stems are written straight into the zip (stored: audio barely compresses), so there
+    # is never a second copy on disk
+    stem_zip = zipfile.ZipFile(os.path.join(outdir, "stems.zip"), "w", zipfile.ZIP_STORED,
+                               allowZip64=True) if stems else None
 
     # long beats save 16-bit stems (half the size) when they can't clip; others stay 32-bit float
     small_stems = bool(s.get("length")) and not song.short
@@ -662,7 +666,7 @@ def render(settings, outdir, progress=None, tag_path=None):
     rev_send = np.zeros(N, np.float32)  # mono sends: reverb and delay make their own stereo
     del_send = np.zeros(N, np.float32)
     midi_tracks = {}
-    stems = []
+    stem_files = []
 
     kick_ev = drum_events(song, "kick")
     duck = fx.sidechain_curve(N, [t for t, _ in kick_ev], s["mix"]["sidechain"])
@@ -684,9 +688,10 @@ def render(settings, outdir, progress=None, tag_path=None):
         ang = (np.clip(pan, -1, 1) + 1) * np.pi / 4
         cl, cr = np.float32(np.cos(ang)), np.float32(np.sin(ang))
         rv, dl = np.float32(cfg.get("reverb") or 0), np.float32(cfg.get("delay") or 0)
-        path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_{name}.wav")
+        path = f"{len(stem_files) + 1:02d}_{name}.wav"
         peak = float(np.max(np.abs(mono))) * max(cl, cr) + (float(np.max(np.abs(side))) if side is not None else 0)
-        w = wavfile.Writer(path, SR, 2, N, pcm16=small_stems and peak < 0.99)
+        w = wavfile.Writer(stem_zip.open(path, "w", force_zip64=True), SR, 2, N,
+                           pcm16=small_stems and peak < 0.99) if stems else None
         step = 1 << 18
         for a in range(0, N, step):
             b = min(N, a + step)
@@ -696,7 +701,8 @@ def render(settings, outdir, progress=None, tag_path=None):
             if side is not None:
                 st[:, 0] += side[a:b]
                 st[:, 1] -= side[a:b]
-            w.write(st)
+            if w:
+                w.write(st)
             mix[a:b] += st
             if rv or dl:
                 m = st.mean(axis=1)
@@ -704,8 +710,9 @@ def render(settings, outdir, progress=None, tag_path=None):
                     rev_send[a:b] += m * rv
                 if dl:
                     del_send[a:b] += m * dl
-        w.close()
-        stems.append(path)
+        if w:
+            w.close()
+            stem_files.append(path)
 
     # ---- drums
     say("Programming drums")
@@ -816,17 +823,20 @@ def render(settings, outdir, progress=None, tag_path=None):
     mx = s["mix"]
 
     def add_return(name, wet_l, wet_r, gain):
-        path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_{name}.wav")
+        path = f"{len(stem_files) + 1:02d}_{name}.wav"
         g = np.float32(gain)
         peak = max(float(np.max(np.abs(wet_l))), float(np.max(np.abs(wet_r)))) * gain
-        w = wavfile.Writer(path, SR, 2, N, pcm16=small_stems and peak < 0.99)
+        w = wavfile.Writer(stem_zip.open(path, "w", force_zip64=True), SR, 2, N,
+                           pcm16=small_stems and peak < 0.99) if stems else None
         for a in range(0, N, 1 << 18):
             b = min(N, a + (1 << 18))
             st = np.stack([wet_l[a:b], wet_r[a:b]], axis=1) * g
-            w.write(st)
+            if w:
+                w.write(st)
             mix[a:b] += st
-        w.close()
-        stems.append(path)
+        if w:
+            w.close()
+            stem_files.append(path)
 
     if mx["reverb"] > 0 and np.any(rev_send):
         wl, wr = fx.reverb_mono(rev_send, mx["reverb_size"])
@@ -850,9 +860,10 @@ def render(settings, outdir, progress=None, tag_path=None):
         times = tag_times(song, len(tag) / SR, s["tag"]["places"])
         starts = [int(t * SR) for t in times]
         lay_tag(mix, tag, starts, s["tag"]["duck"])
-        path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_producer_tag.wav")
-        write_tag_stem(path, N, tag, starts)
-        stems.append(path)
+        path = f"{len(stem_files) + 1:02d}_producer_tag.wav"
+        if stems:
+            write_tag_stem(stem_zip.open(path, "w", force_zip64=True), N, tag, starts)
+            stem_files.append(path)
         tag_info = len(times)
 
     # ---- master bus
@@ -899,12 +910,10 @@ def render(settings, outdir, progress=None, tag_path=None):
     mp3_path = media.to_mp3(wav_path, os.path.join(outdir, "beat.mp3"))
     midi_path = os.path.join(outdir, "beat.mid")
     write_midi(midi_path, s["bpm"], midi_tracks)
-    zip_path = os.path.join(outdir, "stems.zip")
-    # audio barely compresses, so store it; then drop the loose copies to save phone storage
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
-        for p in stems:
-            z.write(p, os.path.basename(p))
-    shutil.rmtree(os.path.join(outdir, "stems"), ignore_errors=True)
+    zip_path = None
+    if stems:
+        stem_zip.close()
+        zip_path = os.path.join(outdir, "stems.zip")
     with open(os.path.join(outdir, "settings.json"), "w") as f:
         json.dump(s, f, indent=2)
     video_path = None

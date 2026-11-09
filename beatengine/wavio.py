@@ -26,11 +26,12 @@ class Writer:
     """Write a WAV file piece by piece (for long songs): w = Writer(path, sr, ch, frames)."""
 
     def __init__(self, path, sr, ch, frames, pcm16=False):
+        """`path` can also be an open binary file (e.g. an entry inside a zip)."""
         fmt, bits = (1, 16) if pcm16 else (3, 32)
         self.dt = "<i2" if pcm16 else "<f4"
         block = ch * bits // 8
         size = frames * block
-        self.f = open(path, "wb")
+        self.f = path if hasattr(path, "write") else open(path, "wb")
         self.f.write(b"RIFF" + struct.pack("<I", 36 + size) + b"WAVE")
         self.f.write(b"fmt " + struct.pack("<IHHIIHH", 16, fmt, ch, sr, sr * block, block, bits))
         self.f.write(b"data" + struct.pack("<I", size))

@@ -18,6 +18,7 @@ class CreateScreen extends StatelessWidget {
     final genres = (st.options['genres'] as Map).cast<String, dynamic>();
     final tiktok = s['format'] != 'full';
     return ListView(padding: const EdgeInsets.all(14), children: [
+      if (st.showTips) _Tips(st),
       SectionCard(title: 'Make a beat', collapsible: false, children: [
         Wrap(
           spacing: 8,
@@ -40,6 +41,24 @@ class CreateScreen extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(child: SelectRow('Mood', s, 'scale', SelectRow.of(st.options['scales'] as List), onChanged: st.changed)),
         ]),
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: TextFormField(
+            key: ValueKey('title=${st.settingsGen}'),
+            initialValue: '${s['title'] ?? ''}',
+            maxLength: 60,
+            decoration: InputDecoration(
+                labelText: tiktok ? 'Name (also shown on the video)' : 'Name your beat (optional)',
+                hintText: 'e.g. Late night amapiano',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                counterText: ''),
+            onChanged: (v) {
+              s['title'] = v;
+              st.changed();
+            },
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.only(top: 8),
           child: DropdownButtonFormField<String>(
@@ -81,18 +100,6 @@ class CreateScreen extends StatelessWidget {
           const Note('The song repeats its verses and hooks with new melody ideas to fill the time. '
               'Long beats take a few minutes to make on a phone.'),
         if (tiktok) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: TextFormField(
-              initialValue: '${s['title'] ?? ''}',
-              decoration: const InputDecoration(labelText: 'Title on the video', hintText: 'e.g. Late night amapiano',
-                  border: OutlineInputBorder(), isDense: true),
-              onChanged: (v) {
-                s['title'] = v;
-                st.changed();
-              },
-            ),
-          ),
           SwitchRow('Also make a vertical video (MP4)', s, 'export_video', onChanged: st.changed),
           const Note('Hook-first, loops seamlessly, louder, with bass that comes through phone speakers.'),
         ],
@@ -107,12 +114,79 @@ class CreateScreen extends StatelessWidget {
             st.make();
           }, icon: const Icon(Icons.auto_awesome), label: const Text('Surprise me')),
           OutlinedButton.icon(
-              onPressed: () => st.loadGenre('${s['genre']}'), icon: const Icon(Icons.restart_alt), label: const Text('Reset style')),
+              onPressed: () => st.loadGenre('${s['genre']}', reset: true),
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('Reset style')),
         ]),
-        BigButton('Make my beat', busy: st.busy, onPressed: st.make),
-        if (st.status.isNotEmpty) Note(st.status, color: kAccent),
+        if (!st.busy) BigButton('Make my beat', onPressed: st.make) else _Progress(st),
+        if (!st.busy && st.status.isNotEmpty) Note(st.status, color: kAccent),
       ]),
-      if (st.result != null && File('${st.result!['wav']}').existsSync()) _Result(st),
+      if (st.result != null && File('${st.result!['wav']}').existsSync()) KeyedSubtree(key: st.resultKey, child: _Result(st)),
+    ]);
+  }
+}
+
+/// Shown while a beat is being made: what's happening, how far along, time so far, and Stop.
+class _Progress extends StatelessWidget {
+  final AppState st;
+  const _Progress(this.st);
+
+  @override
+  Widget build(BuildContext context) {
+    final long = ((st.s['length'] ?? 0) as num) > 0;
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          Expanded(child: Text(st.status, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Text('${(st.renderPct * 100).round()}% · ${AppState.elapsedText(st.renderSeconds)}',
+              style: const TextStyle(color: kDim, fontSize: 12)),
+        ]),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(value: st.renderPct > 0 ? st.renderPct : null, minHeight: 8),
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(
+            child: Text(
+                long ? 'Long beats take a few minutes. You can use other tabs meanwhile.' : 'You can use other tabs meanwhile.',
+                style: const TextStyle(color: kDim, fontSize: 12)),
+          ),
+          TextButton.icon(
+            onPressed: st.cancelling ? null : st.cancelRender,
+            icon: const Icon(Icons.stop_circle_outlined),
+            label: Text(st.cancelling ? 'Stopping…' : 'Stop'),
+          ),
+        ]),
+      ]),
+    );
+  }
+}
+
+/// A one-time quick start for new users.
+class _Tips extends StatelessWidget {
+  final AppState st;
+  const _Tips(this.st);
+
+  @override
+  Widget build(BuildContext context) {
+    Widget tip(IconData i, String t) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(i, size: 18, color: kAccent),
+            const SizedBox(width: 10),
+            Expanded(child: Text(t, style: const TextStyle(fontSize: 13))),
+          ]),
+        );
+    return SectionCard(title: 'Quick start', collapsible: false, children: [
+      tip(Icons.touch_app_outlined, 'Pick a style and press "Make my beat". That\'s it: the producer engine does the rest.'),
+      tip(Icons.casino_outlined, '"New melody" and "Surprise me" give fresh ideas. Changed your mind? Tap Undo at the top.'),
+      tip(Icons.headphones, 'Inspire: add songs you love and the beat borrows their tempo, key and groove.'),
+      tip(Icons.sell_outlined, 'Tag: make your producer tag and choose where it goes in your beats.'),
+      tip(Icons.library_music_outlined, 'My beats keeps everything you make. Star the ones you want to keep for good.'),
+      Align(alignment: Alignment.centerRight, child: FilledButton(onPressed: st.dismissTips, child: const Text('Got it'))),
     ]);
   }
 }
@@ -138,10 +212,13 @@ class _Result extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final r = st.result!;
-    final d = (r['duration'] as num).toDouble();
-    final s = st.s;
-    final stamp = '${s['genre']}-${(s['bpm'] as num).round()}bpm-${'${s['key']}'.replaceAll('#', 's')}';
-    return SectionCard(title: 'Your beat', collapsible: false, children: [
+    final d = ((r['duration'] as num?) ?? 0).toDouble();
+    // describe the beat itself (older saved results may not have these: fall back to the settings)
+    final s = {...st.s, for (final k in ['genre', 'bpm', 'key', 'scale']) if (r[k] != null) k: r[k]};
+    s['title'] = '${r['name'] ?? ''}'.isNotEmpty ? r['name'] : st.s['title'];
+    final stamp = fileStamp(s);
+    final name = '${s['title'] ?? ''}'.trim();
+    return SectionCard(title: name.isEmpty ? 'Your beat' : 'Your beat · $name', collapsible: false, children: [
       PlayerBar(path: '${r['wav']}', autoplay: true),
       Note('${d ~/ 60}:${(d % 60).round().toString().padLeft(2, '0')} · ${r['lufs']} LUFS · '
           '${(s['bpm'] as num).round()} BPM in ${s['key']} ${s['scale']}'),
@@ -154,7 +231,7 @@ class _Result extends StatelessWidget {
         OutlinedButton.icon(
           icon: const Icon(Icons.download),
           label: const Text('Save WAV'),
-          onPressed: () => _save(context, '${r['wav']}', 'beat-$stamp.wav', 'audio/wav'),
+          onPressed: () => _save(context, '${r['wav']}', '$stamp.wav', 'audio/wav'),
         ),
         if (st.videoPath != null)
           FilledButton.icon(
@@ -166,12 +243,19 @@ class _Result extends StatelessWidget {
           OutlinedButton.icon(
             icon: const Icon(Icons.download),
             label: const Text('Save video'),
-            onPressed: () => _save(context, st.videoPath!, 'beat-$stamp.mp4', 'video/mp4'),
+            onPressed: () => _save(context, st.videoPath!, '$stamp.mp4', 'video/mp4'),
           ),
         OutlinedButton.icon(
-          icon: const Icon(Icons.layers_outlined),
-          label: const Text('Stems'),
-          onPressed: () => _share(context, '${r['stems']}', 'Stems'),
+          icon: st.stemsBusy == AppState.beatId(r)
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.layers_outlined),
+          label: Text(st.stemsBusy == AppState.beatId(r) ? 'Making stems…' : 'Stems'),
+          onPressed: st.stemsBusy != null
+              ? null
+              : () async {
+                  final p = await st.ensureStems(r);
+                  if (p != null && context.mounted) await _share(context, p, 'Stems');
+                },
         ),
         OutlinedButton.icon(
           icon: const Icon(Icons.piano),

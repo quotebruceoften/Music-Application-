@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'engine.dart';
@@ -52,6 +54,25 @@ class AppState extends ChangeNotifier {
   String status = '';
   J? result;
   String? videoPath;
+  double renderPct = 0; // 0..1 while a beat is being made
+  DateTime? renderStarted;
+  String? _renderJob;
+  Timer? _ticker;
+  bool cancelling = false;
+
+  // app-wide helpers for the UI
+  final messenger = GlobalKey<ScaffoldMessengerState>();
+  final resultKey = GlobalKey(); // the "Your beat" card, to scroll to it when ready
+  int tab = 0; // the bottom-bar tab, so other screens can switch it
+  bool showTips = false;
+
+  // my beats (library)
+  List<J> beats = [];
+  bool beatsLoading = false;
+
+  int settingsGen = 0; // bumps when settings are replaced wholesale, so text boxes refresh
+  // undo for big changes to the settings
+  final List<(String, String)> _undo = []; // (what changed, settings before)
 
   // inspiration
   List<Ref> refs = [];
@@ -124,8 +145,11 @@ class AppState extends ChangeNotifier {
           if (File('${r['wav']}').existsSync()) result = r;
         } catch (_) {}
       }
+      if (s['format'] == 'full') presetLoudness = (sub('mix')['loudness'] as num?)?.toDouble() ?? -14.0;
+      showTips = _prefs!.getBool('tips_done') != true;
       await loadVoices();
       await loadTags();
+      unawaited(loadBeats());
       ready = true;
     } catch (e) {
       startupError = '$e';
@@ -171,25 +195,82 @@ class AppState extends ChangeNotifier {
 
   J sub(String k) => (s[k] as Map).cast<String, dynamic>();
 
+  // ---------------------------------------------------------------- small UI helpers
+  void toast(String text, {String? action, VoidCallback? onAction}) {
+    final m = messenger.currentState;
+    if (m == null) return;
+    m.hideCurrentSnackBar();
+    m.showSnackBar(SnackBar(
+      content: Text(text),
+      behavior: SnackBarBehavior.floating,
+      action: action == null ? null : SnackBarAction(label: action, onPressed: onAction ?? () {}),
+    ));
+  }
+
+  void goTab(int i) {
+    tab = i;
+    notifyListeners();
+  }
+
+  void dismissTips() {
+    showTips = false;
+    _prefs?.setBool('tips_done', true);
+    notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- undo
+  bool get canUndo => _undo.isNotEmpty;
+  String get undoLabel => _undo.isEmpty ? '' : _undo.last.$1;
+
+  /// Remember the settings before a big change, and offer to undo it.
+  void _remember(String what) {
+    _undo.add((what, jsonEncode(s)));
+    settingsGen++;
+    if (_undo.length > 20) _undo.removeAt(0);
+  }
+
+  void _offerUndo(String done) => toast(done, action: 'Undo', onAction: undo);
+
+  Future<void> undo() async {
+    if (_undo.isEmpty) return;
+    final (what, before) = _undo.removeLast();
+    settingsGen++;
+    try {
+      s = (await engine.post('/api/sanitize', jsonDecode(before)) as Map).cast<String, dynamic>();
+    } catch (_) {
+      s = (jsonDecode(before) as Map).cast<String, dynamic>();
+    }
+    changed();
+    toast('Undid: $what');
+  }
+
   // ---------------------------------------------------------------- settings actions
-  Future<void> loadGenre(String g) async {
+  Future<void> loadGenre(String g, {bool reset = false}) async {
+    final label = '${((options['genres'] as Map?) ?? {})[g] ?? g}';
+    _remember(reset ? 'Reset style' : 'Switch to $label');
     final keepTag = s['tag'];
     final producer = s['producer'];
     final format = s['format'];
     final length = s['length'];
+    final title = s['title'];
     s = (await engine.get('/api/preset/$g') as Map).cast<String, dynamic>();
+    if (title != null) s['title'] = title;
     if (keepTag != null) s['tag'] = keepTag;
     s['producer'] = producer ?? '';
     if (length != null) s['length'] = length;
-    if (format != null) setFormat('$format', notify: false);
+    presetLoudness = (sub('mix')['loudness'] as num?)?.toDouble() ?? -14.0;
+    if (format != null && format != 'full') setFormat('$format', notify: false);
     changed();
+    _offerUndo(reset ? 'Style reset to its starting point' : 'Switched to $label');
   }
+
+  double presetLoudness = -14.0; // the style's own loudness, restored when leaving TikTok format
 
   void setFormat(String f, {bool notify = true}) {
     s['format'] = f;
     final tt = f != 'full';
     final mix = sub('mix');
-    mix['loudness'] = tt ? -10.0 : -14.0;
+    mix['loudness'] = tt ? -10.0 : presetLoudness;
     mix['phone_bass'] = tt ? 0.6 : 0.0;
     if (tt) mix['width'] = min((mix['width'] as num).toDouble(), 1.0);
     s['export_video'] = tt;
@@ -202,6 +283,7 @@ class AppState extends ChangeNotifier {
   }
 
   void surprise() {
+    _remember('Surprise me');
     final r = Random();
     T pick<T>(List<T> l) => l[r.nextInt(l.length)];
     s['key'] = pick((options['notes'] as List).cast<String>());
@@ -212,12 +294,15 @@ class AppState extends ChangeNotifier {
     sub('chords')['sound'] = pick(((options['sounds'] as Map)['chord_sounds'] as List).cast<String>());
     sub('melody')['sound'] = pick(((options['sounds'] as Map)['melody_sounds'] as List).cast<String>());
     changed();
+    _offerUndo('Shuffled key, chords, sounds and melody');
   }
 
   Future<void> importSettings(String path) async {
     final j = jsonDecode(await File(path).readAsString());
+    _remember('Load settings');
     s = (await engine.post('/api/sanitize', j) as Map).cast<String, dynamic>();
     changed();
+    _offerUndo('Settings loaded');
   }
 
   Future<String> exportSettings() async {
@@ -230,18 +315,26 @@ class AppState extends ChangeNotifier {
   Future<void> make() async {
     if (busy) return;
     busy = true;
+    cancelling = false;
     status = 'Starting…';
+    renderPct = 0;
+    renderStarted = DateTime.now();
     videoPath = null;
+    _ticker?.cancel();
+    _ticker = Timer.periodic(const Duration(seconds: 1), (_) => notifyListeners()); // elapsed time
     notifyListeners();
     try {
-      final r = await engine.runJob('/api/render', {'settings': s}, onProgress: (m) {
-        status = m;
-        notifyListeners();
-      });
-      result = r;
+      final r = await engine.runJob('/api/render', {'settings': s},
+          onProgress: (m) {
+            status = m;
+            notifyListeners();
+          },
+          onPct: (p) => renderPct = p,
+          onStarted: (id) => _renderJob = id);
       s = (r['settings'] as Map).cast<String, dynamic>();
+      result = {...r, ...beatSummary(s)};
       _prefs?.setString('settings', jsonEncode(s));
-      _prefs?.setString('result', jsonEncode({...r, 'settings': null}));
+      _prefs?.setString('result', jsonEncode({...result!, 'settings': null}));
       tagPreviewWav = null; // a new beat: an old preview no longer matches
       videoPath = r['video'] as String?;
       if (r['needs_video'] == true) {
@@ -254,12 +347,156 @@ class AppState extends ChangeNotifier {
           videoPath = null; // shown as a note; the audio is still ready
         }
       }
-      status = 'Done! Change anything and make it again.';
+      final secs = DateTime.now().difference(renderStarted!).inSeconds;
+      status = 'Done in ${elapsedText(secs)}. Change anything and make it again.';
+      HapticFeedback.mediumImpact();
+      toast('Your beat is ready');
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final c = resultKey.currentContext;
+        if (c != null) Scrollable.ensureVisible(c, duration: const Duration(milliseconds: 450), curve: Curves.easeOut);
+      });
+      unawaited(loadBeats());
+    } on JobCancelled {
+      status = 'Stopped. Your settings are still here.';
     } catch (e) {
       status = 'Something went wrong: $e';
     }
+    _ticker?.cancel();
+    _renderJob = null;
     busy = false;
+    cancelling = false;
     notifyListeners();
+  }
+
+  Future<void> cancelRender() async {
+    final id = _renderJob;
+    if (id == null || cancelling) return;
+    cancelling = true;
+    status = 'Stopping…';
+    notifyListeners();
+    await engine.cancelJob(id);
+  }
+
+  int get renderSeconds => renderStarted == null ? 0 : DateTime.now().difference(renderStarted!).inSeconds;
+
+  static String elapsedText(int secs) => secs < 60 ? '${secs}s' : '${secs ~/ 60}m ${(secs % 60).toString().padLeft(2, '0')}s';
+
+  // ---------------------------------------------------------------- my beats
+  Future<void> loadBeats() async {
+    beatsLoading = true;
+    notifyListeners();
+    try {
+      final j = await engine.get('/api/beats/list') as Map;
+      beats = (j['beats'] as List).map((e) => (e as Map).cast<String, dynamic>()).toList();
+      // a result saved by an older version doesn't say what the beat was: fill it in
+      final r = result;
+      if (r != null && r['genre'] == null) {
+        for (final b in beats) {
+          if (b['id'] == beatId(r)) {
+            result = {...r, for (final k in ['id', 'name', 'genre', 'bpm', 'key', 'scale']) k: b[k]};
+            _prefs?.setString('result', jsonEncode({...result!, 'settings': null}));
+          }
+        }
+      }
+    } catch (_) {}
+    beatsLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> renameBeat(J b, String name) async {
+    try {
+      final r = await engine.post('/api/beats/update', {'id': b['id'], 'name': name}) as Map;
+      if (result?['id'] == b['id']) s['title'] = name;
+      _replaceBeat(r.cast<String, dynamic>());
+    } catch (e) {
+      toast("Couldn't rename: $e");
+    }
+  }
+
+  Future<void> starBeat(J b, bool starred) async {
+    try {
+      final r = await engine.post('/api/beats/update', {'id': b['id'], 'starred': starred}) as Map;
+      _replaceBeat(r.cast<String, dynamic>());
+      toast(starred ? 'Starred: this beat is kept for good' : 'Unstarred');
+    } catch (e) {
+      toast("Couldn't update: $e");
+    }
+  }
+
+  Future<void> deleteBeat(J b) async {
+    try {
+      await engine.post('/api/beats/delete', {'id': b['id']});
+    } catch (_) {}
+    beats.removeWhere((x) => x['id'] == b['id']);
+    if (result?['id'] == b['id'] || result?['folder'] == b['folder']) {
+      result = null;
+      _prefs?.remove('result');
+    }
+    notifyListeners();
+  }
+
+  String? stemsBusy; // id of the beat whose stems are being made
+
+  /// What a beat is (kept with the result so its card describes the beat, not the
+  /// settings you're editing now).
+  static J beatSummary(J settings) => {
+        'name': '${settings['title'] ?? ''}'.trim(),
+        'genre': settings['genre'], 'bpm': settings['bpm'], 'key': settings['key'], 'scale': settings['scale'],
+      };
+
+  static String beatId(J b) => '${b['id'] ?? '${b['folder']}'.split(Platform.pathSeparator).last}';
+
+  /// Stems are made on demand (they're big). Returns the stems.zip path, or null.
+  Future<String?> ensureStems(J b) async {
+    final have = b['stems'] as String?;
+    if (have != null && File(have).existsSync()) return have;
+    if (stemsBusy != null) {
+      toast('Already making stems. One moment…');
+      return null;
+    }
+    final id = beatId(b);
+    stemsBusy = id;
+    notifyListeners();
+    toast('Making the stems (each instrument on its own track)…');
+    try {
+      final r = await engine.runJob('/api/beats/stems', {'id': id});
+      final path = r['stems'] as String?;
+      if (result != null && beatId(result!) == id) result = {...result!, 'stems': path};
+      _replaceBeat(r);
+      return path;
+    } catch (e) {
+      toast("Couldn't make the stems: $e");
+      return null;
+    } finally {
+      stemsBusy = null;
+      notifyListeners();
+    }
+  }
+
+  void _replaceBeat(J b) {
+    final i = beats.indexWhere((x) => x['id'] == b['id']);
+    if (i >= 0) beats[i] = b;
+    notifyListeners();
+  }
+
+  /// Bring a beat back: its settings go into Create (undoable) and it becomes the current beat.
+  Future<void> openBeat(J b) async {
+    try {
+      final j = jsonDecode(await File('${b['folder']}${Platform.pathSeparator}settings.json').readAsString());
+      _remember('Open "${b['name']}"');
+      s = (await engine.post('/api/sanitize', j) as Map).cast<String, dynamic>();
+      s['title'] = b['name'];
+      result = {...b, 'settings': null};
+      _prefs?.setString('result', jsonEncode(result));
+      videoPath = b['video'] as String?;
+      tagPreviewWav = null;
+      status = '';
+      changed();
+      goTab(0);
+      _offerUndo('Opened "${b['name']}". Change anything and make it again');
+    } catch (e) {
+      toast("Couldn't open that beat: $e");
+    }
   }
 
   String videoTitle() {
@@ -340,6 +577,7 @@ class AppState extends ChangeNotifier {
     if (ready.isEmpty) return false;
     try {
       final j = await engine.post('/api/inspire/apply', {'refs': ready, 'use': use, 'settings': s}) as Map;
+      _remember('Inspiration');
       s = (j['settings'] as Map).cast<String, dynamic>();
       inspireNotes = (j['notes'] as List).map((e) => '$e').toList();
       changed();

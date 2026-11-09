@@ -16,6 +16,12 @@ class EngineException implements Exception {
   String toString() => message;
 }
 
+/// Thrown when a job was stopped on purpose.
+class JobCancelled implements Exception {
+  @override
+  String toString() => 'Stopped';
+}
+
 /// Talks to the Python beat engine running inside the app (embedded via serious_python).
 class Engine {
   static const int port = 8765;
@@ -120,24 +126,44 @@ class Engine {
     return body;
   }
 
-  /// Start a background job and wait for it, reporting progress messages.
-  Future<J> runJob(String path, Object body, {void Function(String)? onProgress}) async {
+  /// Start a background job and wait for it, reporting progress messages (and, for
+  /// beats, how far along it is from 0 to 1). [onStarted] gets the job id for cancelling.
+  Future<J> runJob(String path, Object body,
+      {void Function(String)? onProgress, void Function(double)? onPct, void Function(String)? onStarted}) async {
     final job = await post(path, body) as J;
-    final id = job['id'];
+    final id = '${job['id']}';
+    onStarted?.call(id);
     String last = '';
+    var misses = 0;
     while (true) {
       await Future.delayed(const Duration(milliseconds: 400));
-      final j = await get('/api/job/$id') as J;
+      J j;
+      try {
+        j = await get('/api/job/$id') as J;
+        misses = 0;
+      } catch (e) {
+        // a busy phone can miss a poll; give up only if the engine stays silent
+        if (++misses > 25) throw EngineException('Lost contact with the beat engine. Please try again.');
+        continue;
+      }
       final msg = '${j['message'] ?? ''}';
       if (msg != last) {
         last = msg;
         onProgress?.call(msg);
       }
+      onPct?.call((j['pct'] as num?)?.toDouble() ?? 0);
       if (j['status'] == 'done') return (j['result'] as Map).cast<String, dynamic>();
+      if (j['status'] == 'cancelled') throw JobCancelled();
       if (j['status'] == 'error') {
         throw EngineException('${j['error'] ?? 'Something went wrong'}', code: j['code'] as String?);
       }
     }
+  }
+
+  Future<void> cancelJob(String id) async {
+    try {
+      await post('/api/job/cancel', {'id': id});
+    } catch (_) {}
   }
 
   String tmpPath(String ext) =>

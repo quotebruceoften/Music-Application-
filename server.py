@@ -40,25 +40,45 @@ jobs_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------- jobs
+class Cancelled(Exception):
+    """Raised inside a job when the app asked to stop it."""
+
+
+# Rough share of the work done when each render stage starts (for the progress bar)
+STAGE_PCT = {"Programming drums": 0.03, "Laying down the bass": 0.18, "Playing the chords": 0.26,
+             "Writing a melody": 0.34, "Mixing": 0.42, "Mastering": 0.58, "Exporting": 0.85,
+             "Making the video": 0.93}
+
+
 def start_job(fn, *args):
     jid = uuid.uuid4().hex[:12]
     job = {"id": jid, "status": "queued", "message": "Waiting…", "result": None, "error": None,
-           "started": time.time()}
+           "started": time.time(), "pct": 0.0, "cancel": False}
     with jobs_lock:
         jobs[jid] = job
         for old in [k for k, v in jobs.items() if time.time() - v["started"] > 3600]:
             jobs.pop(old, None)
 
     def progress(msg):
+        if job["cancel"]:
+            raise Cancelled()
         job["message"] = msg
+        if msg in STAGE_PCT:
+            job["pct"] = STAGE_PCT[msg]
 
     def run():
         with work_lock:
+            if job["cancel"]:
+                job["status"], job["message"] = "cancelled", "Stopped"
+                return
             job["status"] = "running"
             try:
                 job["result"] = fn(progress, *args)
                 job["status"] = "done"
                 job["message"] = "Done"
+                job["pct"] = 1.0
+            except Cancelled:
+                job["status"], job["message"] = "cancelled", "Stopped"
             except media.NeedsDecoding as e:
                 job["status"], job["error"], job["code"] = "error", str(e), "needs_decoding"
             except Exception as e:  # noqa: BLE001 - report every failure to the app
@@ -80,20 +100,114 @@ def _cleanup_renders():
         return
     dirs = sorted((os.path.join(RENDERS, d) for d in os.listdir(RENDERS)), key=os.path.getmtime, reverse=True)
     total = 0
+    kept = 0
     for i, d in enumerate(dirs):
+        if _beat_meta(d).get("starred"):
+            continue  # starred beats are the user's keepers: never removed automatically
         total += _folder_size(d)
-        if i > 0 and (i >= KEEP_RENDERS or total > KEEP_BYTES):
+        kept += 1
+        if i > 0 and (kept > KEEP_RENDERS or total > KEEP_BYTES):
             shutil.rmtree(d, ignore_errors=True)
 
 
+def do_stems(progress, bid):
+    """Make the stems for a beat in the library by rendering it again from its settings
+    (the engine is deterministic, so the stems add up to the same beat)."""
+    folder = _beat_folder(bid)
+    if not folder:
+        raise ValueError("That beat is gone.")
+    zip_path = os.path.join(folder, "stems.zip")
+    if os.path.exists(zip_path):
+        return _beat_info(folder)
+    with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
+        settings = json.load(f)
+    tmp = tempfile.mkdtemp(dir=TMP)
+    try:
+        settings["export_video"] = False
+        tp = _tag_path(settings)
+        render(settings, tmp, progress=progress, tag_path=tp if tp and os.path.exists(tp) else None, stems=True)
+        os.replace(os.path.join(tmp, "stems.zip"), zip_path)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return _beat_info(folder)
+
+
+# ---------------------------------------------------------------- my beats (library)
+def _beat_meta(folder):
+    try:
+        with open(os.path.join(folder, "meta.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_beat_meta(folder, meta):
+    tmp = os.path.join(folder, "meta.json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=1)
+    os.replace(tmp, os.path.join(folder, "meta.json"))
+
+
+def _beat_folder(bid):
+    bid = os.path.basename(str(bid or ""))
+    folder = os.path.join(RENDERS, bid)
+    return folder if bid and os.path.exists(os.path.join(folder, "beat.wav")) else None
+
+
+def _beat_info(folder):
+    meta = _beat_meta(folder)
+    try:
+        with open(os.path.join(folder, "settings.json"), encoding="utf-8") as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        settings = {}
+    f = lambda n: os.path.join(folder, n) if os.path.exists(os.path.join(folder, n)) else None  # noqa: E731
+    label = GENRES.get(settings.get("genre"), {}).get("label", "Beat")
+    return {
+        "id": os.path.basename(folder),
+        "name": meta.get("name") or settings.get("title") or f"{label} in {settings.get('key', '')} {settings.get('scale', '')}".strip(),
+        "starred": bool(meta.get("starred")),
+        "created": meta.get("created") or os.path.getmtime(folder),
+        "duration": meta.get("duration"), "lufs": meta.get("lufs"), "tags_placed": meta.get("tags_placed", 0),
+        "genre": settings.get("genre"), "genre_label": label, "bpm": settings.get("bpm"),
+        "key": settings.get("key"), "scale": settings.get("scale"), "format": settings.get("format", "full"),
+        "folder": folder, "wav": f("beat.wav"), "mp3": f("beat.mp3"), "m4a": f("beat.m4a"),
+        "midi": f("beat.mid"), "stems": f("stems.zip"), "video": f("beat.mp4"),
+        "size": _folder_size(folder),
+    }
+
+
+def list_beats():
+    out = []
+    if os.path.isdir(RENDERS):
+        for d in os.listdir(RENDERS):
+            folder = os.path.join(RENDERS, d)
+            if os.path.exists(os.path.join(folder, "beat.wav")):
+                out.append(_beat_info(folder))
+    return sorted(out, key=lambda b: b["created"], reverse=True)
+
+
 # ---------------------------------------------------------------- work functions
-def do_render(progress, settings):
-    out = os.path.join(RENDERS, time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4])
+def _tag_path(settings):
     tag_id = os.path.basename(str((settings.get("tag") or {}).get("id") or ""))
-    tag_path = os.path.join(TAGS, tag_id, "tag.wav") if tag_id else None
-    r = render(settings, out, progress=progress, tag_path=tag_path)
+    return os.path.join(TAGS, tag_id, "tag.wav") if tag_id else None
+
+
+def do_render(progress, settings, with_stems=False):
+    """Make a beat. Stems are skipped by default (they're big and slow to write);
+    do_stems() makes them later from the saved settings, giving identical audio."""
+    out = os.path.join(RENDERS, time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4])
+    tag_path = _tag_path(settings)
+    try:
+        r = render(settings, out, progress=progress, tag_path=tag_path, stems=with_stems)
+    except BaseException:
+        shutil.rmtree(out, ignore_errors=True)  # stopped or failed: don't leave half a beat behind
+        raise
+    title = str((r["settings"].get("title") or "")).strip()
+    _write_beat_meta(out, {"name": title, "starred": False, "created": time.time(), "duration": r["duration"],
+                           "lufs": r["lufs"], "tags_placed": r.get("tags_placed") or 0})
     _cleanup_renders()
-    return {"folder": out, "wav": r["wav"], "mp3": r["mp3"], "midi": r["midi"], "stems": r["stems"],
+    return {"id": os.path.basename(out), "folder": out, "wav": r["wav"], "mp3": r["mp3"], "midi": r["midi"], "stems": r["stems"],
             "video": r.get("video"), "duration": r["duration"], "lufs": r["lufs"], "peak_db": r["peak_db"],
             "settings": r["settings"], "arrangement": r.get("arrangement"),
             "tags_placed": r.get("tags_placed") or 0, "needs_video": bool(
@@ -287,6 +401,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not job:
                     return self._send(404, {"error": "Unknown job"})
                 return self._send(200, job)
+            if u.path == "/api/beats/list":
+                return self._send(200, {"beats": list_beats()})
             if u.path == "/api/tags/list":
                 return self._send(200, {"tags": list_tags(saved=True)})
             if u.path == "/api/tags/voices":
@@ -305,7 +421,9 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/sanitize":
                 return self._send(200, sanitize(b))
             if self.path == "/api/render":
-                return self._send(200, start_job(do_render, b.get("settings") or b))
+                return self._send(200, start_job(do_render, b.get("settings") or b, bool(b.get("with_stems"))))
+            if self.path == "/api/beats/stems":
+                return self._send(200, start_job(do_stems, b.get("id")))
             if self.path == "/api/inspire/analyze":
                 path = b.get("path", "")
                 if not os.path.exists(path):
@@ -322,6 +440,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"settings": sanitize(s), "notes": notes})
             if self.path == "/api/tags/make":
                 return self._send(200, start_job(do_tag, b))
+            if self.path == "/api/job/cancel":
+                job = jobs.get(str(b.get("id")))
+                if job and job["status"] in ("queued", "running"):
+                    job["cancel"] = True
+                    job["message"] = "Stopping…"
+                return self._send(200, {"ok": True})
+            if self.path == "/api/beats/update":
+                folder = _beat_folder(b.get("id"))
+                if not folder:
+                    return self._send(404, {"error": "That beat is gone."})
+                meta = _beat_meta(folder)
+                if "name" in b:
+                    meta["name"] = str(b.get("name") or "").strip()[:60]
+                if "starred" in b:
+                    meta["starred"] = bool(b.get("starred"))
+                meta.setdefault("created", os.path.getmtime(folder))
+                _write_beat_meta(folder, meta)
+                return self._send(200, _beat_info(folder))
+            if self.path == "/api/beats/delete":
+                folder = _beat_folder(b.get("id"))
+                if folder:
+                    shutil.rmtree(folder, ignore_errors=True)
+                return self._send(200, {"ok": True})
             if self.path == "/api/tags/preview":
                 return self._send(200, start_job(do_tag_preview, b))
             if self.path in ("/api/tags/save", "/api/tags/rename"):

@@ -7,7 +7,7 @@ No server and no internet are needed, except for optional song links.
 ```
 ┌──────────────────────── the app ────────────────────────┐
 │ Flutter UI (lib/)                                        │
-│   Create · Inspire · Tag · Studio                        │
+│   Create · My beats · Inspire · Tag · Studio             │
 │        │ http://127.0.0.1:8765 (inside the app only)     │
 │        ▼                                                 │
 │ Embedded Python: server.py + beatengine/ (NumPy only)    │
@@ -17,6 +17,16 @@ No server and no internet are needed, except for optional song links.
 │   save to Music/Movies, phone voices for tags            │
 └──────────────────────────────────────────────────────────┘
 ```
+
+## What's in the app
+- **Create:** pick a style, name the beat, choose a length (standard or 3–10 min), make it. A progress bar
+  shows each stage, and you can stop a long render. Big changes (style, Surprise me, inspiration) can be undone.
+- **My beats:** every beat you've made: play, rename, star (starred beats are never cleaned up), share,
+  save, stems, MIDI, delete, or open it again in Create to tweak it. Stems are made when you ask for them
+  (they're big), from the same settings, so they match the beat exactly.
+- **Inspire:** borrow tempo, key, groove and chords from songs you love.
+- **Tag:** make a producer tag, preview it, save it to your library, and choose if and where it goes.
+- **Studio:** every detail: drum grids, bass, chords, melody, song structure, mix.
 
 ## Get the Android app (no Android Studio needed)
 1. Create a GitHub repository and push this whole project (the folder that contains `beatengine/`,

@@ -13,6 +13,13 @@ const kLine = Color(0xFF2C2934);
 const kDim = Color(0xFF9A96A6);
 
 double numOf(dynamic v, [double d = 0]) => v is num ? v.toDouble() : double.tryParse('$v') ?? d;
+/// A safe file name for a beat: its name if it has one, else style-tempo-key.
+String fileStamp(Map<String, dynamic> s) {
+  final title = '${s['title'] ?? ''}'.trim().replaceAll(RegExp(r'[^A-Za-z0-9 _-]'), '').replaceAll(RegExp(r'\s+'), '-');
+  if (title.isNotEmpty) return title.length > 50 ? title.substring(0, 50) : title;
+  return 'beat-${s['genre']}-${(s['bpm'] as num? ?? 0).round()}bpm-${'${s['key']}'.replaceAll('#', 's')}';
+}
+
 String pct(double v) => '${(v * 100).round()}%';
 String dB(double v) => '${v > 0 ? '+' : ''}${v.round()} dB';
 String semis(double v) => '${v > 0 ? '+' : ''}${v.round()} st';

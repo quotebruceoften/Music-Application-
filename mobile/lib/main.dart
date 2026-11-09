@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/beats.dart';
 import 'screens/create.dart';
 import 'screens/inspire.dart';
 import 'screens/studio.dart';
@@ -21,6 +22,7 @@ class BeatMakerApp extends StatelessWidget {
     final scheme = ColorScheme.fromSeed(seedColor: kAccent, brightness: Brightness.dark, primary: kAccent, surface: kBg);
     return MaterialApp(
       title: 'BeatMaker',
+      scaffoldMessengerKey: state.messenger,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: scheme,
@@ -42,7 +44,6 @@ class Home extends StatefulWidget {
 }
 
 class _HomeState extends State<Home> {
-  int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -89,10 +90,12 @@ class _HomeState extends State<Home> {
 
     final pages = [
       CreateScreen(st),
-      InspireScreen(st, onMade: () => setState(() => _tab = 0)),
+      BeatsScreen(st),
+      InspireScreen(st, onMade: () => st.goTab(0)),
       TagScreen(st),
       StudioScreen(st),
     ];
+    final tab = st.tab.clamp(0, pages.length - 1);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: kBg,
@@ -103,6 +106,12 @@ class _HomeState extends State<Home> {
           ]),
         ),
         actions: [
+          if (st.canUndo && (tab == 0 || tab == 4))
+            IconButton(
+              tooltip: 'Undo: ${st.undoLabel}',
+              icon: const Icon(Icons.undo),
+              onPressed: st.undo,
+            ),
           if (st.busy)
             const Padding(
               padding: EdgeInsets.only(right: 16),
@@ -114,15 +123,19 @@ class _HomeState extends State<Home> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 860), // tablets and PCs
-            child: IndexedStack(index: _tab, children: pages),
+            child: IndexedStack(index: tab, children: pages),
           ),
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
+        selectedIndex: tab,
+        onDestinationSelected: (i) {
+          if (i == 1) st.loadBeats(); // refresh the library when opening it
+          st.goTab(i);
+        },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.graphic_eq), label: 'Create'),
+          NavigationDestination(icon: Icon(Icons.library_music_outlined), label: 'My beats'),
           NavigationDestination(icon: Icon(Icons.headphones), label: 'Inspire'),
           NavigationDestination(icon: Icon(Icons.sell_outlined), label: 'Tag'),
           NavigationDestination(icon: Icon(Icons.tune), label: 'Studio'),
