@@ -6,7 +6,9 @@ import pathlib
 import re
 
 M = pathlib.Path(".")
-NDK = "27.0.12077973"
+# Plugins (serious_python, audioplayers, record...) need at least this NDK; newer is fine.
+NDK = "28.2.13676358"
+MIN_COMPILE_SDK = 36
 
 
 def edit(path, fn):
@@ -42,6 +44,39 @@ def gradle(s):
     return s
 
 
+# Some plugins (serious_python_android 0.9.x) compile against an old SDK, which fails
+# AGP's AAR metadata check. Raise any plugin's compileSdk to at least MIN_COMPILE_SDK.
+# Registered before `evaluationDependsOn(":app")` so it runs before AGP finalizes.
+RAISE_SDK = f"""// BeatMaker: raise old plugin compileSdk (added by tool/patch_platforms.py)
+subprojects {{
+    afterEvaluate {{
+        if (name == "app") return@afterEvaluate
+        val ext = extensions.findByName("android") ?: return@afterEvaluate
+        try {{
+            val cur = ext.javaClass.getMethod("getCompileSdkVersion").invoke(ext) as String?
+            val level = cur?.substringAfter("android-")?.toIntOrNull() ?: 0
+            if (level < {MIN_COMPILE_SDK}) {{
+                ext.javaClass.getMethod("compileSdkVersion", Int::class.javaPrimitiveType).invoke(ext, {MIN_COMPILE_SDK})
+            }}
+        }} catch (e: Exception) {{
+            logger.warn("Could not raise compileSdk for $name: $e")
+        }}
+    }}
+}}
+"""
+
+
+def root_gradle(s):
+    if "BeatMaker: raise old plugin compileSdk" in s:
+        return s
+    anchor = "subprojects {\n    project.evaluationDependsOn"
+    if anchor in s:
+        return s.replace(anchor, RAISE_SDK + anchor, 1)
+    return RAISE_SDK + "\n" + s
+
+
+
+edit("android/build.gradle.kts", root_gradle)
 edit("android/app/src/main/AndroidManifest.xml", manifest)
 edit("android/app/build.gradle.kts", gradle)
 edit("android/app/build.gradle", gradle)
