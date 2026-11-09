@@ -67,7 +67,12 @@ class _HomeState extends State<Home> {
               ] else ...[
                 const Icon(Icons.error_outline, color: kAccent2, size: 40),
                 const SizedBox(height: 12),
-                Text(st.startupError!, textAlign: TextAlign.center),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+                  child: SingleChildScrollView(
+                    child: SelectableText(st.startupError!, textAlign: TextAlign.center),
+                  ),
+                ),
                 const SizedBox(height: 12),
                 FilledButton(
                     onPressed: () {

@@ -38,24 +38,53 @@ class Engine {
     if (await _ping()) return;
 
     onStatus?.call('Starting the beat engine…');
-    unawaited(SeriousPython.run(
-      'app/app.zip',
-      environmentVariables: {
-        'BEATMAKER_PORT': '$port',
-        'BEATMAKER_DATA': dataDir,
-        'BEATMAKER_ALLOW_LINKS': allowLinks ? '1' : '0',
-        if (Platform.isAndroid || Platform.isIOS) 'BEATMAKER_NO_FFMPEG': '1',
-        if (Platform.isAndroid || Platform.isIOS) 'BEATMAKER_MAX_ANALYSIS_S': '90',
-      },
-    ));
+    // Python can only be started once per app process; "Try again" just waits again.
+    if (!_launched) {
+      _launched = true;
+      _runError = null;
+      SeriousPython.run(
+        'app/app.zip',
+        environmentVariables: {
+          'BEATMAKER_PORT': '$port',
+          'BEATMAKER_DATA': dataDir,
+          'BEATMAKER_ALLOW_LINKS': allowLinks ? '1' : '0',
+          if (Platform.isAndroid || Platform.isIOS) 'BEATMAKER_NO_FFMPEG': '1',
+          if (Platform.isAndroid || Platform.isIOS) 'BEATMAKER_MAX_ANALYSIS_S': '90',
+        },
+      ).then((r) {
+        // run() only returns once Python has stopped; the server should run forever.
+        _runError = (r == null || r.trim().isEmpty) ? 'The engine stopped unexpectedly.' : r.trim();
+      }, onError: (Object e) {
+        _runError = '$e';
+      });
+    }
     // The first launch unpacks Python and NumPy, which can take a little while.
-    for (var i = 0; i < 360; i++) {
+    for (var i = 0; i < 480; i++) {
       if (await _ping()) return;
+      if (_runError != null) break;
       if (i == 20) onStatus?.call('Unpacking the engine (first launch only)…');
       await Future.delayed(const Duration(milliseconds: 250));
     }
-    throw EngineException('The beat engine did not start. Please restart the app.');
+    final log = await _readLog();
+    final details = [if (_runError != null) _runError!, if (log.isNotEmpty) log].join('\n\n');
+    throw EngineException(details.isEmpty
+        ? 'The beat engine did not start. Please restart the app.'
+        : 'The beat engine did not start.\n\n${_tail(details, 1500)}');
   }
+
+  static bool _launched = false;
+  static String? _runError;
+
+  /// Python writes startup errors here (see mobile/python/main.py).
+  Future<String> _readLog() async {
+    try {
+      final f = File('$dataDir${Platform.pathSeparator}engine.log');
+      if (await f.exists()) return (await f.readAsString()).trim();
+    } catch (_) {}
+    return '';
+  }
+
+  static String _tail(String s, int n) => s.length <= n ? s : '…${s.substring(s.length - n)}';
 
   Future<bool> _ping() async {
     try {

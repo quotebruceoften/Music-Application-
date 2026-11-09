@@ -78,8 +78,24 @@ def root_gradle(s):
 
 edit("android/build.gradle.kts", root_gradle)
 edit("android/app/src/main/AndroidManifest.xml", manifest)
+def legacy_packaging(kts):
+    # serious_python ships Python's stdlib and site-packages as zip files named lib*.so and
+    # reads them from nativeLibraryDir. Android only puts them there when native libs are
+    # extracted at install (extractNativeLibs="true"); without it Python can't start.
+    block = ("\n    packaging {\n        jniLibs {\n            useLegacyPackaging = true\n        }\n    }\n" if kts else
+             "\n    packagingOptions {\n        jniLibs {\n            useLegacyPackaging true\n        }\n    }\n")
+
+    def fn(s):
+        if "useLegacyPackaging" in s:
+            return s
+        return s.replace("android {\n", "android {" + block, 1)
+    return fn
+
+
 edit("android/app/build.gradle.kts", gradle)
+edit("android/app/build.gradle.kts", legacy_packaging(True))
 edit("android/app/build.gradle", gradle)
+edit("android/app/build.gradle", legacy_packaging(False))
 
 
 # ---------------------------------------------------------------- iOS
