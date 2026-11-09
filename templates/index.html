@@ -263,6 +263,14 @@ function build() {
     if (tt) S.mix.width = Math.min(S.mix.width, 1.0);
     save(); build();
   }));
+  if (S.format === "full") {
+    const L = {0: "Standard (~1.5–2 min)"};
+    for (let m = 3; m <= 10; m++) L[m] = m + " minutes";
+    S.length = Math.round(Number(S.length) || 0);
+    F.append(select("Length", S, "length", L, () => { S.length = Number(S.length); save(); build(); }));
+    if (S.length > 0) F.append(el("div", {class: "note"},
+      "The song repeats its verses and hooks with new melody ideas to fill the time. Long beats take a little longer to make."));
+  }
   if (S.format !== "full") {
     F.append(el("label", {class: "ctl"}, el("b", {}, "Title on the video"), (() => {
       const i = el("input", {type: "text", value: S.title || "", placeholder: "e.g. Late night amapiano"});
@@ -383,7 +391,9 @@ async function clean(obj) {
   return (await fetch("/api/sanitize", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(obj)})).json();
 }
 async function loadGenre(g) {
-  S = await (await fetch("/api/preset/" + g)).json(); save(); build();
+  const length = S ? S.length : 0;
+  S = await (await fetch("/api/preset/" + g)).json();
+  S.length = length || 0; save(); build();
 }
 
 $("addSect").onclick = () => { S.arrangement.push(["verse", 8]); save(); build(); };

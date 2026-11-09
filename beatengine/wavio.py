@@ -8,14 +8,40 @@ def write(path, sr, data):
     data = np.asarray(data)
     ch = 1 if data.ndim == 1 else data.shape[1]
     if data.dtype == np.int16:
-        fmt, bits, raw = 1, 16, data.astype("<i2").tobytes()
+        fmt, bits, dt = 1, 16, "<i2"
     else:
-        fmt, bits, raw = 3, 32, data.astype("<f4").tobytes()
+        fmt, bits, dt = 3, 32, "<f4"
     block = ch * bits // 8
+    size = len(data) * block
     with open(path, "wb") as f:
-        f.write(b"RIFF" + struct.pack("<I", 36 + len(raw)) + b"WAVE")
+        f.write(b"RIFF" + struct.pack("<I", 36 + size) + b"WAVE")
         f.write(b"fmt " + struct.pack("<IHHIIHH", 16, fmt, ch, sr, sr * block, block, bits))
-        f.write(b"data" + struct.pack("<I", len(raw)) + raw)
+        f.write(b"data" + struct.pack("<I", size))
+        step = 1 << 18  # write in chunks so long songs don't need a full-size copy
+        for i in range(0, len(data), step):
+            f.write(np.ascontiguousarray(data[i:i + step], dtype=dt).tobytes())
+
+
+class Writer:
+    """Write a WAV file piece by piece (for long songs): w = Writer(path, sr, ch, frames)."""
+
+    def __init__(self, path, sr, ch, frames, pcm16=False):
+        fmt, bits = (1, 16) if pcm16 else (3, 32)
+        self.dt = "<i2" if pcm16 else "<f4"
+        block = ch * bits // 8
+        size = frames * block
+        self.f = open(path, "wb")
+        self.f.write(b"RIFF" + struct.pack("<I", 36 + size) + b"WAVE")
+        self.f.write(b"fmt " + struct.pack("<IHHIIHH", 16, fmt, ch, sr, sr * block, block, bits))
+        self.f.write(b"data" + struct.pack("<I", size))
+
+    def write(self, chunk):
+        if self.dt == "<i2" and np.asarray(chunk).dtype != np.int16:  # float -1..1 -> 16-bit
+            chunk = np.clip(np.round(np.asarray(chunk) * 32767), -32768, 32767)
+        self.f.write(np.ascontiguousarray(chunk, dtype=self.dt).tobytes())
+
+    def close(self):
+        self.f.close()
 
 
 def read(path):

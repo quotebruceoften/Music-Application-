@@ -58,6 +58,28 @@ class CreateScreen extends StatelessWidget {
             },
           ),
         ),
+        if (!tiktok)
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: DropdownButtonFormField<String>(
+              key: ValueKey('length=${s['length']}'),
+              value: '${((s['length'] ?? 0) as num).round()}',
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Length', border: OutlineInputBorder(), isDense: true),
+              items: [
+                const DropdownMenuItem(value: '0', child: Text('Standard (~1.5–2 min)')),
+                for (var m = 3; m <= 10; m++) DropdownMenuItem(value: '$m', child: Text('$m minutes')),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                s['length'] = int.parse(v);
+                st.changed();
+              },
+            ),
+          ),
+        if (!tiktok && ((s['length'] ?? 0) as num) > 0)
+          const Note('The song repeats its verses and hooks with new melody ideas to fill the time. '
+              'Long beats take a few minutes to make on a phone.'),
         if (tiktok) ...[
           Padding(
             padding: const EdgeInsets.only(top: 10),

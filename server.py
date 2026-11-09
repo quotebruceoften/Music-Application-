@@ -31,6 +31,7 @@ VERSION = "1.3.0"
 DATA = os.path.abspath(os.environ.get("BEATMAKER_DATA", os.path.join(os.path.dirname(__file__), "renders")))
 RENDERS, REFS, TAGS, TMP = (os.path.join(DATA, d) for d in ("beats", "refs", "tags", "tmp"))
 KEEP_RENDERS = 20
+KEEP_BYTES = 3 * 1024 ** 3  # 3 GB of old beats at most
 
 work_lock = threading.Lock()  # one heavy job at a time keeps phones responsive
 jobs = {}
@@ -67,12 +68,21 @@ def start_job(fn, *args):
     return job
 
 
+def _folder_size(d):
+    return sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(d) for f in fs)
+
+
 def _cleanup_renders():
+    """Keep the newest renders: at most KEEP_RENDERS, and at most KEEP_BYTES in total
+    (long beats with stems are big). The newest render is always kept."""
     if not os.path.isdir(RENDERS):
         return
-    dirs = sorted((os.path.join(RENDERS, d) for d in os.listdir(RENDERS)), key=os.path.getmtime)
-    for d in dirs[:-KEEP_RENDERS]:
-        shutil.rmtree(d, ignore_errors=True)
+    dirs = sorted((os.path.join(RENDERS, d) for d in os.listdir(RENDERS)), key=os.path.getmtime, reverse=True)
+    total = 0
+    for i, d in enumerate(dirs):
+        total += _folder_size(d)
+        if i > 0 and (i >= KEEP_RENDERS or total > KEEP_BYTES):
+            shutil.rmtree(d, ignore_errors=True)
 
 
 # ---------------------------------------------------------------- work functions

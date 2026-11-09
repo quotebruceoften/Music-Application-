@@ -151,9 +151,11 @@ class AppState extends ChangeNotifier {
     final keepTag = s['tag'];
     final producer = s['producer'];
     final format = s['format'];
+    final length = s['length'];
     s = (await engine.get('/api/preset/$g') as Map).cast<String, dynamic>();
     if (keepTag != null) s['tag'] = keepTag;
     s['producer'] = producer ?? '';
+    if (length != null) s['length'] = length;
     if (format != null) setFormat('$format', notify: false);
     changed();
   }

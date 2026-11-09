@@ -36,24 +36,77 @@ def butter_mag(freqs, kind, fc, order=2):
     raise ValueError(kind)
 
 
+BLOCK = 1 << 18  # ~6 s: long songs are filtered block by block to keep memory flat
+
+
 def apply_response(x, sr, resp_fn, pad):
-    """Multiply the spectrum of x (along axis 0) by resp_fn(freqs)."""
+    """Multiply the spectrum of x (along axis 0) by resp_fn(freqs).
+
+    Short signals use one FFT. Long ones are processed in overlapping blocks (each block
+    gets `pad` samples of context on both sides, which covers the filter's ring), so the
+    memory needed doesn't grow with the length of the song."""
     x = np.asarray(x, dtype=np.float32)
     n = x.shape[0]
     if n == 0:
         return x
-    nfft = next_fast_len(n + pad)
-    X = np.fft.rfft(x, nfft, axis=0)
-    H = resp_fn(np.fft.rfftfreq(nfft, 1 / sr)).astype(np.float32)
-    if x.ndim > 1:
-        H = H[:, None]
-    return np.fft.irfft(X * H, nfft, axis=0)[:n].astype(np.float32)
+    if n <= BLOCK + 2 * pad:
+        nfft = next_fast_len(n + pad)
+        X = np.fft.rfft(x, nfft, axis=0)
+        H = resp_fn(np.fft.rfftfreq(nfft, 1 / sr)).astype(np.float32)
+        if x.ndim > 1:
+            H = H[:, None]
+        return np.fft.irfft(X * H, nfft, axis=0)[:n].astype(np.float32)
+    out = np.empty_like(x)
+    hcache = {}
+    for a in range(0, n, BLOCK):
+        b = min(n, a + BLOCK)
+        lo, hi = max(0, a - pad), min(n, b + pad)
+        seg = x[lo:hi]
+        nfft = next_fast_len(len(seg) + pad)
+        if nfft not in hcache:
+            H = resp_fn(np.fft.rfftfreq(nfft, 1 / sr)).astype(np.float32)
+            hcache[nfft] = H[:, None] if x.ndim > 1 else H
+        y = np.fft.irfft(np.fft.rfft(seg, nfft, axis=0) * hcache[nfft], nfft, axis=0)
+        out[a:b] = y[a - lo: a - lo + (b - a)]
+    return out
 
 
-def filt(x, sr, kind, freq, order=2):
+def filt(x, sr, kind, freq, order=2, inplace=False):
     lowest = min(freq) if isinstance(freq, (list, tuple)) else freq
     pad = int(min(2 * sr, max(2048, 6 * sr / max(lowest, 1.0))))
-    return apply_response(x, sr, lambda f: butter_mag(f, kind, freq, order), pad)
+    resp = lambda f: butter_mag(f, kind, freq, order)  # noqa: E731
+    if inplace:
+        return blocks(x, lambda seg: apply_response(seg, sr, resp, pad), pad, inplace=True)
+    return apply_response(x, sr, resp, pad)
+
+
+def blocks(x, fn, pad, inplace=False, block=BLOCK):
+    """Run fn over x in blocks of `block` samples, each with `pad` samples of context on
+    both sides, and stitch the middles together. fn must be local in time (filters,
+    compressors, saturation...), so the result matches processing everything at once,
+    but memory stays flat however long the song is. With inplace=True, x is overwritten."""
+    x = np.asarray(x, dtype=np.float32)
+    n = x.shape[0]
+    if n <= block + 2 * pad:
+        y = fn(x)
+        if inplace:
+            x[...] = y
+            return x
+        return np.asarray(y, np.float32)
+    out = x if inplace else np.empty_like(x)
+    left = None  # original samples just before the current block (already overwritten)
+    for a in range(0, n, block):
+        b = min(n, a + block)
+        lo, hi = max(0, a - pad), min(n, b + pad)
+        if inplace and left is not None:
+            seg = np.concatenate([left, x[a:hi]])
+        else:
+            seg = x[lo:hi]
+        if inplace:
+            left = x[max(0, b - pad):b].copy()
+        y = fn(seg)
+        out[a:b] = y[a - lo: a - lo + (b - a)]
+    return out
 
 
 def biquad_mag(b, a, freqs, sr):
@@ -64,17 +117,26 @@ def biquad_mag(b, a, freqs, sr):
 
 
 def fftconvolve(a, b):
-    """Full linear convolution of 1-D arrays."""
+    """Full linear convolution of 1-D arrays (overlap-add in blocks when `a` is long)."""
     n = len(a) + len(b) - 1
-    nfft = next_fast_len(n)
-    return np.fft.irfft(np.fft.rfft(a, nfft) * np.fft.rfft(b, nfft), nfft)[:n]
+    if len(a) <= 2 * BLOCK:
+        nfft = next_fast_len(n)
+        return np.fft.irfft(np.fft.rfft(a, nfft) * np.fft.rfft(b, nfft), nfft)[:n]
+    out = np.zeros(n, dtype=np.float32)
+    nfft = next_fast_len(BLOCK + len(b) - 1)
+    B = np.fft.rfft(b, nfft)
+    for s in range(0, len(a), BLOCK):
+        seg = a[s:s + BLOCK]
+        y = np.fft.irfft(np.fft.rfft(seg, nfft) * B, nfft)[: len(seg) + len(b) - 1]
+        out[s:s + len(y)] += y
+    return out
 
 
 def onepole(x, sr, tc):
     """Causal one-pole smoother (like lfilter([1-a],[1,-a])), via an exponential kernel."""
     a = np.exp(-1 / (tc * sr))
     k = (1 - a) * a ** np.arange(int(tc * sr * 8) + 1)
-    return fftconvolve(x, k)[: len(x)].astype(np.float32)
+    return fftconvolve(np.asarray(x, np.float32), k)[: len(x)].astype(np.float32, copy=False)
 
 
 def running_min(x, size):
@@ -96,12 +158,17 @@ def running_min(x, size):
 
 def moving_average(x, size):
     """Centred moving average (like ndimage.uniform_filter1d)."""
-    x = np.asarray(x, dtype=np.float64)
+    x = np.asarray(x, dtype=np.float32)
     w = max(1, int(size))
     half = w // 2
-    padded = np.concatenate([np.full(half, x[0]), x, np.full(w - half, x[-1])])
-    c = np.concatenate([[0], np.cumsum(padded)])
-    return ((c[w:w + len(x)] - c[:len(x)]) / w).astype(np.float32)
+    padded = np.concatenate([np.full(half, x[0], np.float32), x, np.full(w - half, x[-1], np.float32)])
+    out = np.empty(len(x), np.float32)
+    step = 1 << 20  # float64 running sums per block keep precision without a full-size copy
+    for a in range(0, len(x), step):
+        b = min(len(x), a + step)
+        c = np.concatenate([[0.0], np.cumsum(padded[a:b + w], dtype=np.float64)])
+        out[a:b] = (c[w:w + b - a] - c[: b - a]) / w
+    return out
 
 
 def median_filter_axis(S, size, axis, chunk=512):

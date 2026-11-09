@@ -6,7 +6,7 @@ import zipfile
 
 import numpy as np
 
-from . import fx, media, synth, theory
+from . import dsp, fx, media, synth, theory
 from . import wavio as wavfile
 import shutil
 import subprocess
@@ -16,6 +16,7 @@ from .presets import (DRUMS, GENRES, OPTIONS, SECTION_TYPES, TRACKS, get_preset)
 SR = synth.SR
 HIT_CHARS = set("xo")
 FORMATS = {"full": None, "tiktok15": 15, "tiktok30": 30, "tiktok60": 60}
+LENGTH_MIN, LENGTH_MAX = 3, 10  # minutes, for long full-length beats
 TAG_POSITIONS = ["start", "start+hooks", "every8"]
 BASS_CHARS = set("xo5^")
 
@@ -131,6 +132,9 @@ def sanitize(settings):
     t["volume"] = _num(t.get("volume"), -40, 0, -26)
 
     s["format"] = s.get("format") if s.get("format") in FORMATS else "full"
+    # Full-song length in minutes: 0 plays the arrangement as written, 3-10 extends it
+    ln = _num(s.get("length"), 0, LENGTH_MAX, 0)
+    s["length"] = 0 if ln < LENGTH_MIN else round(ln, 1)
     s["export_video"] = bool(s.get("export_video"))
     s["producer"] = str(s.get("producer") or "")[:40]
     s["title"] = str(s.get("title") or "")[:60]
@@ -164,6 +168,50 @@ def tiktok_arrangement(bpm, seconds):
     return [["verse", v], ["hook", h1], ["break", b], ["hook", max(2, total - v - h1 - b)]]
 
 
+def extend_arrangement(arr, bpm, minutes):
+    """Stretch an arrangement to about `minutes`: keep the intro and outro, and repeat the
+    body in between, adding a breakdown every other pass. Returns [name, bars, cycle] items;
+    `cycle` counts the passes so later passes can vary (new melody, etc.)."""
+    bar = 240.0 / bpm
+    target = max(1, int(round(minutes * 60 / bar)))
+    arr = [list(a) for a in arr]
+    head = []
+    while arr and arr[0][0] == "intro":
+        head.append(arr.pop(0))
+    tail = []
+    while arr and arr[-1][0] == "outro":
+        tail.insert(0, arr.pop())
+    body = arr or [["verse", 8], ["hook", 8]]
+    out = [[n, b, 0] for n, b in head]
+    used = sum(b for _, b in head) + sum(b for _, b in tail)
+    has_break = any(n == "break" for n, _ in body)
+    cycle = 0
+    while True:
+        part = [[n, b, cycle] for n, b in body]
+        if cycle % 2 == 1 and not has_break:
+            part.insert(len(part) // 2, ["break", 8, cycle])
+        added = False
+        for item in part:
+            # stop at the section that lands closest to the target length
+            if cycle > 0 and used + item[1] - target > target - used:
+                break
+            out.append(item)
+            used += item[1]
+            added = True
+        if not added or used >= target or len(out) and out[-1] is not part[-1]:
+            break
+        cycle += 1
+        if cycle > 200:  # safety
+            break
+    # end on a hook before the outro when there's room, so the song resolves
+    if out and out[-1][0] != "hook" and any(n == "hook" for n, _ in body):
+        hb = next(b for n, b in body if n == "hook")
+        if used + hb <= target + hb // 2:
+            out.append(["hook", hb, cycle])
+    out += [[n, b, cycle] for n, b in tail]
+    return out
+
+
 class Song:
     def __init__(self, s):
         self.s = s
@@ -173,9 +221,15 @@ class Song:
         cur = 0
         secs = FORMATS.get(s.get("format", "full"))
         self.short = secs is not None
-        self.arrangement = tiktok_arrangement(s["bpm"], secs) if self.short else s["arrangement"]
-        for i, (name, bars) in enumerate(self.arrangement):
-            self.sections.append({"i": i, "name": name, "bars": bars, "start": cur})
+        if self.short:
+            arr = [[n, b, 0] for n, b in tiktok_arrangement(s["bpm"], secs)]
+        elif s.get("length"):
+            arr = extend_arrangement(s["arrangement"], s["bpm"], s["length"])
+        else:
+            arr = [[n, b, 0] for n, b in s["arrangement"]]
+        self.arrangement = [[n, b] for n, b, _ in arr]
+        for i, (name, bars, cycle) in enumerate(arr):
+            self.sections.append({"i": i, "name": name, "bars": bars, "start": cur, "cycle": cycle})
             cur += bars
         self.total_bars = cur
         self.length = self.total_bars * self.bar + 4.0
@@ -389,9 +443,13 @@ def melody_events(song):
     for sec in song.sections:
         if not song.active("melody", sec):
             continue
-        key = "break" if sec["name"] == "break" else "main"
+        # Long beats get new melody ideas on later passes; the main theme returns every
+        # other pass so the song still feels like one song.
+        c = sec.get("cycle", 0)
+        variant = 0 if c % 2 == 0 else 1 + (c // 2) % 2
+        key = ("break" if sec["name"] == "break" else "main", variant)
         if key not in phrases:
-            rng = np.random.default_rng(cfg["seed"] * 1000 + (1 if key == "break" else 0))
+            rng = np.random.default_rng(cfg["seed"] * 1000 + (1 if key[0] == "break" else 0) + 10 * variant)
             phrases[key] = make_phrase(song, rng, bars)
         ph = phrases[key]
         for b in range(sec["bars"]):
@@ -509,9 +567,11 @@ def render(settings, outdir, progress=None, tag_path=None):
     N = song.N
     os.makedirs(os.path.join(outdir, "stems"), exist_ok=True)
 
+    # long beats save 16-bit stems (half the size) when they can't clip; others stay 32-bit float
+    small_stems = bool(s.get("length")) and not song.short
     mix = np.zeros((N, 2), np.float32)
-    rev_send = np.zeros((N, 2), np.float32)
-    del_send = np.zeros((N, 2), np.float32)
+    rev_send = np.zeros(N, np.float32)  # mono sends: reverb and delay make their own stereo
+    del_send = np.zeros(N, np.float32)
     midi_tracks = {}
     stems = []
 
@@ -519,18 +579,44 @@ def render(settings, outdir, progress=None, tag_path=None):
     duck = fx.sidechain_curve(N, [t for t, _ in kick_ev], s["mix"]["sidechain"])
 
     def finish(name, mono, cfg, pan=0.0, width=0.0, sidechain=False):
-        mono = mono * fx.db(cfg["volume"] + TRIM.get(name, 0))
+        """Gain, pump, pan; then add to the mix and sends and save the stem, block by block
+        so a 10-minute song never needs extra full-length stereo copies."""
+        mono = np.asarray(mono, np.float32)
+        mono *= np.float32(fx.db(cfg["volume"] + TRIM.get(name, 0)))
         if sidechain:
-            mono = mono * duck
-        st = fx.pan_stereo(mono.astype(np.float32), pan, width)
+            mono *= duck
+        side = None
+        if width > 0:  # mono-safe stereo spread: a short delayed copy, highs only
+            d = int(0.015 * SR)
+            side = np.zeros_like(mono)
+            side[d:] = mono[:-d]
+            fx.filt(side, "highpass", 300, inplace=True)
+            side *= np.float32(width * 0.5)
+        ang = (np.clip(pan, -1, 1) + 1) * np.pi / 4
+        cl, cr = np.float32(np.cos(ang)), np.float32(np.sin(ang))
+        rv, dl = np.float32(cfg.get("reverb") or 0), np.float32(cfg.get("delay") or 0)
         path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_{name}.wav")
-        wavfile.write(path, SR, st)
+        peak = float(np.max(np.abs(mono))) * max(cl, cr) + (float(np.max(np.abs(side))) if side is not None else 0)
+        w = wavfile.Writer(path, SR, 2, N, pcm16=small_stems and peak < 0.99)
+        step = 1 << 18
+        for a in range(0, N, step):
+            b = min(N, a + step)
+            st = np.empty((b - a, 2), np.float32)
+            np.multiply(mono[a:b], cl, out=st[:, 0])
+            np.multiply(mono[a:b], cr, out=st[:, 1])
+            if side is not None:
+                st[:, 0] += side[a:b]
+                st[:, 1] -= side[a:b]
+            w.write(st)
+            mix[a:b] += st
+            if rv or dl:
+                m = st.mean(axis=1)
+                if rv:
+                    rev_send[a:b] += m * rv
+                if dl:
+                    del_send[a:b] += m * dl
+        w.close()
         stems.append(path)
-        mix[:] += st
-        if cfg.get("reverb"):
-            rev_send[:] += st * cfg["reverb"]
-        if cfg.get("delay"):
-            del_send[:] += st * cfg["delay"]
 
     # ---- drums
     say("Programming drums")
@@ -551,7 +637,7 @@ def render(settings, outdir, progress=None, tag_path=None):
             last = k
             _place(buf, takes[k], t, v)
         if name not in ("kick",):
-            buf = fx.filt(buf, "highpass", 300 if name in ("hat", "openhat", "shaker") else 90)
+            fx.filt(buf, "highpass", 300 if name in ("hat", "openhat", "shaker") else 90, inplace=True)
         finish(name, buf, cfg, pan=cfg["pan"])
         midi_tracks[name] = (9, [(t, 0.1, GM_DRUMS[name], v) for t, v in ev])
 
@@ -565,7 +651,8 @@ def render(settings, outdir, progress=None, tag_path=None):
             y = synth.bass_note(cfg["sound"], round(theory.midi_to_hz(midi), 3), round(dur, 3),
                                 cfg["decay"], round(gfrom, 3), round(cfg["glide"] * 0.12, 3))
             _place(buf, y, t, v)
-        buf = fx.filt(fx.filt(buf, "highpass", 28), "lowpass", 5000)
+        fx.filt(buf, "highpass", 28, inplace=True)
+        fx.filt(buf, "lowpass", 5000, inplace=True)
         if s["mix"]["phone_bass"] > 0:
             peak = np.max(np.abs(buf)) or 1.0
             harm = fx.filt(fx.filt(np.tanh(buf / peak * 5), "highpass", 160), "lowpass", 1800)
@@ -583,7 +670,8 @@ def render(settings, outdir, progress=None, tag_path=None):
             y = synth.tone_note(cfg["sound"], round(theory.midi_to_hz(n), 3), round(dur, 3),
                                 round(cfg["brightness"], 2))
             _place(buf, y, t, v * 0.45 * fx.db(TONE_GAIN.get(cfg["sound"], 0)))
-        buf = fx.filt(fx.filt(buf, "highpass", 140), "lowpass", _bright_lp(cfg["brightness"]))
+        fx.filt(buf, "highpass", 140, inplace=True)
+        fx.filt(buf, "lowpass", _bright_lp(cfg["brightness"]), inplace=True)
         finish("chords", buf, cfg, width=cfg["stereo"], sidechain=cfg.get("sidechain"))
         midi_tracks["chords"] = (2, [(t, d, n, v) for t, n, d, v in ev])
 
@@ -597,7 +685,8 @@ def render(settings, outdir, progress=None, tag_path=None):
             y = synth.tone_note(cfg["sound"], round(theory.midi_to_hz(n), 3), round(dur, 3),
                                 round(cfg["brightness"], 2))
             _place(buf, y, t, v * fx.db(TONE_GAIN.get(cfg["sound"], 0)))
-        buf = fx.filt(fx.filt(buf, "highpass", 220), "lowpass", _bright_lp(cfg["brightness"]))
+        fx.filt(buf, "highpass", 220, inplace=True)
+        fx.filt(buf, "lowpass", _bright_lp(cfg["brightness"]), inplace=True)
         finish("melody", buf, cfg, width=0.3, sidechain=cfg.get("sidechain"))
         midi_tracks["melody"] = (3, [(t, d, n, v) for t, n, d, v in ev])
 
@@ -631,19 +720,37 @@ def render(settings, outdir, progress=None, tag_path=None):
 
     # ---- effect returns
     say("Mixing")
+    # the instruments are done: free cached notes and the pump curve before the big steps
+    synth.tone_note.cache_clear()
+    synth.bass_note.cache_clear()
+    duck = None
     mx = s["mix"]
+
+    def add_return(name, wet_l, wet_r, gain):
+        path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_{name}.wav")
+        g = np.float32(gain)
+        peak = max(float(np.max(np.abs(wet_l))), float(np.max(np.abs(wet_r)))) * gain
+        w = wavfile.Writer(path, SR, 2, N, pcm16=small_stems and peak < 0.99)
+        for a in range(0, N, 1 << 18):
+            b = min(N, a + (1 << 18))
+            st = np.stack([wet_l[a:b], wet_r[a:b]], axis=1) * g
+            w.write(st)
+            mix[a:b] += st
+        w.close()
+        stems.append(path)
+
     if mx["reverb"] > 0 and np.any(rev_send):
-        wet = fx.reverb(rev_send, mx["reverb_size"]) * (mx["reverb"] * 0.8)
-        path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_reverb_return.wav")
-        wavfile.write(path, SR, wet)
-        stems.append(path)
-        mix += wet
+        wl, wr = fx.reverb_mono(rev_send, mx["reverb_size"])
+        rev_send = None
+        add_return("reverb_return", wl, wr, mx["reverb"] * 0.8)
+        wl = wr = None
+    rev_send = None
     if mx["delay"] > 0 and np.any(del_send):
-        wet = fx.delay(del_send, s["bpm"]) * (mx["delay"] * 0.6)
-        path = os.path.join(outdir, "stems", f"{len(stems) + 1:02d}_delay_return.wav")
-        wavfile.write(path, SR, wet)
-        stems.append(path)
-        mix += wet
+        wet = fx.delay(del_send, s["bpm"])
+        del_send = None
+        add_return("delay_return", wet[:, 0], wet[:, 1], mx["delay"] * 0.6)
+        wet = None
+    del_send = None
 
     # ---- producer tag (the beat ducks a little underneath it)
     tag_info = None
@@ -669,23 +776,17 @@ def render(settings, outdir, progress=None, tag_path=None):
     # ---- master bus
     say("Mastering")
     peak = np.max(np.abs(mix)) or 1.0
-    bus = mix * (fx.db(-6) / peak)
-    bus = fx.filt(bus, "highpass", 28)
-    bus = fx.compressor(bus, threshold_db=-16, ratio=2.0)
-    bus = fx.saturate(bus, mx["warmth"] * 0.6)
-    if mx["warmth"] > 0:
-        bus = fx.filt(bus, "lowpass", 20000 - mx["warmth"] * 9000)
-    if mx["air"] > 0:  # high-shelf "air" boost, as a mastering engineer would add
-        bus = bus + fx.filt(bus, "highpass", 7000) * (fx.db(mx["air"] * 5) - 1)
-    bus = fx.stereo_width(bus, mx["width"])
+    mix *= np.float32(fx.db(-6) / peak)
+    # the whole mix-bus chain runs block by block, in place: the mix becomes the master bus
+    bus = dsp.blocks(mix, lambda seg: fx.master_chain(seg, mx["warmth"], mx["air"], mx["width"]),
+                     int(1.5 * SR), inplace=True)
+    mix = None
     last = song.sections[-1]
     if last["name"] == "outro":
         a = int(last["start"] * song.bar * SR)
         b = int(song.total_bars * song.bar * SR)
-        fade = np.ones(N, np.float32)
-        fade[a:b] = np.linspace(1, 0, b - a) ** 1.5
-        fade[b:] = 0
-        bus *= fade[:, None]
+        bus[a:b] *= (np.linspace(1, 0, b - a, dtype=np.float32) ** 1.5)[:, None]
+        bus[b:] = 0
     if song.short:
         # loop-ready: cut exactly on the bar line and wrap the reverb tail back to the start
         L = int(round(song.total_bars * song.bar * SR))
@@ -693,6 +794,7 @@ def render(settings, outdir, progress=None, tag_path=None):
         head[: len(tail)] += tail[: L]
         bus = head
     final, loud = fx.master(bus, mx["loudness"], -1.0)
+    bus = None
 
     if not song.short:  # trim silence at the end
         env = np.max(np.abs(final), axis=1)
@@ -702,17 +804,25 @@ def render(settings, outdir, progress=None, tag_path=None):
 
     # ---- export
     say("Exporting")
-    dither = (np.random.default_rng(0).random(final.shape) - np.random.default_rng(1).random(final.shape))
-    pcm = np.clip(np.round(final * 32767 + dither), -32768, 32767).astype(np.int16)
+    # 16-bit WAV with TPDF dither, written block by block
     wav_path = os.path.join(outdir, "beat.wav")
-    wavfile.write(wav_path, SR, pcm)
+    w = wavfile.Writer(wav_path, SR, final.shape[1], len(final), pcm16=True)
+    r1, r2 = np.random.default_rng(0), np.random.default_rng(1)
+    for a in range(0, len(final), 1 << 18):
+        blk = final[a:a + (1 << 18)] * np.float32(32767)
+        blk += r1.random(blk.shape, dtype=np.float32)
+        blk -= r2.random(blk.shape, dtype=np.float32)
+        w.write(np.clip(np.round(blk), -32768, 32767).astype(np.int16))
+    w.close()
     mp3_path = media.to_mp3(wav_path, os.path.join(outdir, "beat.mp3"))
     midi_path = os.path.join(outdir, "beat.mid")
     write_midi(midi_path, s["bpm"], midi_tracks)
     zip_path = os.path.join(outdir, "stems.zip")
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+    # audio barely compresses, so store it; then drop the loose copies to save phone storage
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
         for p in stems:
             z.write(p, os.path.basename(p))
+    shutil.rmtree(os.path.join(outdir, "stems"), ignore_errors=True)
     with open(os.path.join(outdir, "settings.json"), "w") as f:
         json.dump(s, f, indent=2)
     video_path = None
