@@ -4,6 +4,7 @@ Run from the mobile/ folder after generating platforms. Safe to run more than on
 """
 import pathlib
 import re
+import shutil
 
 M = pathlib.Path(".")
 # Plugins (serious_python, audioplayers, record...) need at least this NDK; newer is fine.
@@ -93,9 +94,9 @@ def legacy_packaging(kts):
 
 
 edit("android/app/build.gradle.kts", gradle)
-edit("android/app/build.gradle.kts", legacy_packaging(True))
 edit("android/app/build.gradle", gradle)
-edit("android/app/build.gradle", legacy_packaging(False))
+# serious_python 6 loads Python's native modules straight from the APK, so native libs no
+# longer need extracting at install (legacy_packaging is kept for older serious_python).
 
 
 # ---------------------------------------------------------------- iOS
@@ -114,12 +115,38 @@ def info_plist(s):
     return s
 
 
+IOS_MIN, MACOS_MIN = "15.0", "12.0"  # serious_python 6 needs iOS 15 / macOS 12
+
+
 def podfile(s):
-    return re.sub(r"^#?\s*platform :ios, '[\d.]+'", "platform :ios, '13.0'", s, flags=re.M)
+    return re.sub(r"^#?\s*platform :ios, '[\d.]+'", f"platform :ios, '{IOS_MIN}'", s, flags=re.M)
+
+
+def mac_podfile(s):
+    return re.sub(r"^#?\s*platform :osx, '[\d.]+'", f"platform :osx, '{MACOS_MIN}'", s, flags=re.M)
+
+
+def ensure_podfile(rel, template_name):
+    """flutter create doesn't always write a Podfile; start from Flutter's own template."""
+    if (M / rel).exists() or not (M / rel).parent.exists():
+        return
+    flutter = shutil.which("flutter")
+    if not flutter:
+        return
+    tpl = pathlib.Path(flutter).resolve().parent.parent / "packages/flutter_tools/templates/cocoapods" / template_name
+    if tpl.exists():
+        (M / rel).write_text(tpl.read_text())
+        print("created:", rel)
+
+
+def deployment_target(key, version):
+    return lambda s: re.sub(key + r" = [\d.]+;", f"{key} = {version};", s)
 
 
 edit("ios/Runner/Info.plist", info_plist)
+ensure_podfile("ios/Podfile", "Podfile-ios")
 edit("ios/Podfile", podfile)
+edit("ios/Runner.xcodeproj/project.pbxproj", deployment_target("IPHONEOS_DEPLOYMENT_TARGET", IOS_MIN))
 
 
 # ---------------------------------------------------------------- macOS
@@ -133,6 +160,9 @@ def entitlements(s):
     return s
 
 
+ensure_podfile("macos/Podfile", "Podfile-macos")
+edit("macos/Podfile", mac_podfile)
+edit("macos/Runner.xcodeproj/project.pbxproj", deployment_target("MACOSX_DEPLOYMENT_TARGET", MACOS_MIN))
 edit("macos/Runner/DebugProfile.entitlements", entitlements)
 edit("macos/Runner/Release.entitlements", entitlements)
 

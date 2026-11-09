@@ -1,6 +1,5 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../state.dart';
 import '../widgets.dart';
@@ -103,14 +102,14 @@ class StudioScreen extends StatelessWidget {
           OutlinedButton.icon(
             icon: const Icon(Icons.save_alt),
             label: const Text('Save settings'),
-            onPressed: () async => Share.shareXFiles([XFile(await st.exportSettings())]),
+            onPressed: () async => shareFiles([await st.exportSettings()]),
           ),
           OutlinedButton.icon(
             icon: const Icon(Icons.file_open_outlined),
             label: const Text('Load settings'),
             onPressed: () async {
-              final r = await FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['json']);
-              final p = r?.files.single.path;
+              final f = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: ['json']);
+              final p = f?.path;
               if (p != null) await st.importSettings(p);
             },
           ),
@@ -230,7 +229,7 @@ class _ProgressionState extends State<_Progression> {
         padding: const EdgeInsets.only(top: 8),
         child: DropdownButtonFormField<String>(
           key: ValueKey('prog=$match'),
-          value: match,
+          initialValue: match,
           isExpanded: true,
           hint: const Text('Choose a progression…'),
           decoration: const InputDecoration(labelText: 'Progression', border: OutlineInputBorder(), isDense: true),

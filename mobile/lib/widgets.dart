@@ -1,6 +1,7 @@
-import 'dart:ui' show FontFeature;
+
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'engine.dart';
 
@@ -13,6 +14,11 @@ const kLine = Color(0xFF2C2934);
 const kDim = Color(0xFF9A96A6);
 
 double numOf(dynamic v, [double d = 0]) => v is num ? v.toDouble() : double.tryParse('$v') ?? d;
+/// Open the system share sheet for files (one place, so a share_plus API change is one edit).
+Future<void> shareFiles(List<String> paths, {String? text}) async {
+  await SharePlus.instance.share(ShareParams(files: [for (final p in paths) XFile(p)], text: text));
+}
+
 /// A safe file name for a beat: its name if it has one, else style-tempo-key.
 String fileStamp(Map<String, dynamic> s) {
   final title = '${s['title'] ?? ''}'.trim().replaceAll(RegExp(r'[^A-Za-z0-9 _-]'), '').replaceAll(RegExp(r'\s+'), '-');
@@ -121,7 +127,7 @@ class SelectRow extends StatelessWidget {
       padding: const EdgeInsets.only(top: 8),
       child: DropdownButtonFormField<String>(
         key: ValueKey('$k=$cur'),
-        value: cur.isEmpty ? null : cur,
+        initialValue: cur.isEmpty ? null : cur,
         isExpanded: true,
         decoration: InputDecoration(labelText: label, border: const OutlineInputBorder(), isDense: true),
         items: choices.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value, overflow: TextOverflow.ellipsis))).toList(),

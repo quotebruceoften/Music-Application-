@@ -49,7 +49,6 @@ class Engine {
       _launched = true;
       _runError = null;
       SeriousPython.run(
-        'app/app.zip',
         environmentVariables: {
           'BEATMAKER_PORT': '$port',
           'BEATMAKER_DATA': dataDir,

@@ -31,6 +31,10 @@ env:
   # serious_python installs the engine's Python packages here, and the Android/iOS
   # builds embed them from here (they fail if this isn't set)
   SERIOUS_PYTHON_SITE_PACKAGES: ${{ github.workspace }}/mobile/build/site-packages
+  # serious_python 6: where the packaged Python app (engine) is staged for the native build
+  SERIOUS_PYTHON_APP: ${{ github.workspace }}/mobile/build/python-app
+  # Python 3.12: the version whose mobile NumPy wheels this app is known to run with
+  SERIOUS_PYTHON_VERSION: "3.12"
 
 jobs:
   android:

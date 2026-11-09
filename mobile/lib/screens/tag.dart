@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:record/record.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../engine.dart' show J;
 import '../player.dart';
@@ -89,9 +88,8 @@ class _TagScreenState extends State<TagScreen> {
 
   Future<void> _upload() async {
     try {
-      final res = await FilePicker.platform.pickFiles(
+      final f = await FilePicker.pickFile(
           type: FileType.custom, allowedExtensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'opus', 'mp4', 'mov', '3gp', 'webm']);
-      final f = res?.files.single;
       if (f?.path == null) return;
       st.ownVoicePath = f!.path;
       st.tagStatus = 'Using "${f.name}". Pick a style, then press "Make preview".';
@@ -145,7 +143,7 @@ class _TagScreenState extends State<TagScreen> {
   void _share(J t) {
     final path = '${t['mp3'] ?? t['wav']}';
     if (!File(path).existsSync()) return;
-    Share.shareXFiles([XFile(path)], text: 'My producer tag');
+    shareFiles([path], text: 'My producer tag');
   }
 
   String _describe(J t) {
@@ -308,15 +306,17 @@ class _TagScreenState extends State<TagScreen> {
     return SectionCard(title: 'My tags${tags.isEmpty ? '' : ' (${tags.length})'}', collapsible: false, children: [
       if (tags.isEmpty)
         const Note('Tags you save show up here. Pick one to put it on your beats.')
-      else ...[
+      else
+        RadioGroup<String?>(
+          groupValue: activeId,
+          onChanged: (v) => st.useTag(v),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         const Note('Tap a tag to put it on your beats.'),
-        RadioListTile<String?>(
+        const RadioListTile<String?>(
           contentPadding: EdgeInsets.zero,
           dense: true,
           value: null,
-          groupValue: activeId,
-          title: const Text('No tag on my beats'),
-          onChanged: (_) => st.useTag(null),
+          title: Text('No tag on my beats'),
         ),
         for (final t in tags) ...[
           Row(children: [
@@ -325,10 +325,8 @@ class _TagScreenState extends State<TagScreen> {
                 contentPadding: EdgeInsets.zero,
                 dense: true,
                 value: '${t['id']}',
-                groupValue: activeId,
                 title: Text('${t['name']}', style: const TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: Text(_describe(t), maxLines: 2, overflow: TextOverflow.ellipsis),
-                onChanged: (v) => st.useTag(v),
               ),
             ),
             IconButton(
@@ -361,7 +359,8 @@ class _TagScreenState extends State<TagScreen> {
           if (_playingId == t['id'] && File('${t['wav']}').existsSync())
             PlayerBar(key: ValueKey('lib=${t['wav']}'), path: '${t['wav']}', autoplay: true),
         ],
-      ],
+          ]),
+        ),
     ]);
   }
 

@@ -43,6 +43,9 @@ The first launch takes a little longer while the engine unpacks.
 ## Build on your PC instead
 Requirements: Flutter (stable), Android Studio (for the Android SDK), Python 3.10+, and `pip install pillow`.
 ```bash
+export SERIOUS_PYTHON_SITE_PACKAGES="$PWD/mobile/build/site-packages"   # Python packages for the app
+export SERIOUS_PYTHON_APP="$PWD/mobile/build/python-app"                # the engine, staged for the build
+export SERIOUS_PYTHON_VERSION=3.12                                      # Python the app embeds
 flutter create --project-name beatmaker --org app.beatmaker --platforms=android,ios,macos,windows,linux /tmp/template
 python tool/merge_template.py /tmp/template mobile
 cd mobile && python ../tool/patch_platforms.py && cd ..
@@ -51,7 +54,8 @@ cd mobile && flutter pub get && cd ..
 bash tool/prepare_python.sh Android          # or iOS / Windows / macOS / Linux
 cd mobile && flutter build apk --release --split-per-abi
 ```
-Run these from the project root. On Windows, use Git Bash for the `.sh` script.
+Run these from the project root, in one terminal (the two `export` lines must stay set for the build).
+On Windows, use Git Bash.
 
 **Faster UI development:** start the engine yourself with `python server.py`, then `cd mobile && flutter run`.
 The app notices the running engine and uses it.

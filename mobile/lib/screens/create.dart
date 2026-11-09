@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../media.dart';
 import '../player.dart';
@@ -63,7 +62,7 @@ class CreateScreen extends StatelessWidget {
           padding: const EdgeInsets.only(top: 8),
           child: DropdownButtonFormField<String>(
             key: ValueKey('format=${s['format']}'),
-            value: '${s['format']}',
+            initialValue: '${s['format']}',
             isExpanded: true,
             decoration: const InputDecoration(labelText: 'Format', border: OutlineInputBorder(), isDense: true),
             items: const [
@@ -82,7 +81,7 @@ class CreateScreen extends StatelessWidget {
             padding: const EdgeInsets.only(top: 10),
             child: DropdownButtonFormField<String>(
               key: ValueKey('length=${s['length']}'),
-              value: '${((s['length'] ?? 0) as num).round()}',
+              initialValue: '${((s['length'] ?? 0) as num).round()}',
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Length', border: OutlineInputBorder(), isDense: true),
               items: [
@@ -196,14 +195,14 @@ class _Result extends StatelessWidget {
   const _Result(this.st);
 
   Future<void> _share(BuildContext context, String path, String text) async {
-    await Share.shareXFiles([XFile(path)], text: text);
+    await shareFiles([path], text: text);
   }
 
   Future<void> _save(BuildContext context, String path, String name, String mime) async {
     final where = await Media.saveToLibrary(path, name, mime);
     if (!context.mounted) return;
     if (where == null) {
-      await Share.shareXFiles([XFile(path)]); // no native "save" here: let the user pick a place
+      await shareFiles([path]); // no native "save" here: let the user pick a place
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Saved to $where')));
     }

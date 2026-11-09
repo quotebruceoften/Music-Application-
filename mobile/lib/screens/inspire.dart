@@ -17,13 +17,12 @@ class _InspireScreenState extends State<InspireScreen> {
   final _link = TextEditingController();
 
   Future<void> _pick() async {
-    final res = await FilePicker.platform.pickFiles(
-      allowMultiple: true,
+    final files = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'mp4', 'mov', 'webm', '3gp'],
     );
-    if (res == null) return;
-    for (final f in res.files) {
+    if (files.isEmpty) return;
+    for (final f in files) {
       if (f.path != null) await widget.st.addSongFile(f.path!, f.name);
     }
   }

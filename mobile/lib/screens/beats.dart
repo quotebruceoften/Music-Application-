@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../engine.dart' show J;
 import '../media.dart';
@@ -96,14 +95,14 @@ class _BeatsScreenState extends State<BeatsScreen> {
       final m4a = '${b['folder']}${Platform.pathSeparator}beat.m4a';
       path = await Media.encodeAac('${b['wav']}', m4a) ?? '${b['wav']}';
     }
-    await Share.shareXFiles([XFile(path)], text: '${b['name']} · made with BeatMaker');
+    await shareFiles([path], text: '${b['name']} · made with BeatMaker');
   }
 
   Future<void> _saveWav(J b) async {
     final name = '${fileStamp({'title': b['name'], 'genre': b['genre'], 'bpm': b['bpm'], 'key': b['key']})}.wav';
     final where = await Media.saveToLibrary('${b['wav']}', name, 'audio/wav');
     if (where == null) {
-      await Share.shareXFiles([XFile('${b['wav']}')]);
+      await shareFiles(['${b['wav']}']);
     } else {
       st.toast('Saved to $where');
     }
@@ -114,7 +113,7 @@ class _BeatsScreenState extends State<BeatsScreen> {
       st.toast('That file is missing for this beat.');
       return;
     }
-    Share.shareXFiles([XFile(path)], text: text);
+    shareFiles([path], text: text);
   }
 
   @override

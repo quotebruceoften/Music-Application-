@@ -8,7 +8,9 @@ import os
 import sys
 import traceback
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# serious_python 6 runs this file without __file__; it puts the app folder first on sys.path
+_me = globals().get("__file__")
+HERE = os.path.dirname(os.path.abspath(_me)) if _me else (sys.path[0] or os.getcwd())
 DATA = os.environ.get("BEATMAKER_DATA") or os.path.join(HERE, "renders")
 LOG = os.path.join(DATA, "engine.log")
 
