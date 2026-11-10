@@ -161,7 +161,7 @@ class _TagScreenState extends State<TagScreen> {
   // ---------------------------------------------------------------- build
   @override
   Widget build(BuildContext context) {
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: kPagePadding, children: [
       _makeCard(),
       if (st.draftTag != null) _draftCard(),
       _libraryCard(),

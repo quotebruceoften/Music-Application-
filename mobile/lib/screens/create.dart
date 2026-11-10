@@ -16,7 +16,7 @@ class CreateScreen extends StatelessWidget {
     final s = st.s;
     final genres = (st.options['genres'] as Map).cast<String, dynamic>();
     final tiktok = s['format'] != 'full';
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: kPagePadding, children: [
       if (st.showTips) _Tips(st),
       SectionCard(title: 'Make a beat', collapsible: false, children: [
         Wrap(
@@ -142,10 +142,7 @@ class _Progress extends StatelessWidget {
               style: const TextStyle(color: kDim, fontSize: 12)),
         ]),
         const SizedBox(height: 8),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(6),
-          child: LinearProgressIndicator(value: st.renderPct > 0 ? st.renderPct : null, minHeight: 8),
-        ),
+        GlowProgress(value: st.renderPct > 0 ? st.renderPct : null),
         const SizedBox(height: 6),
         Row(children: [
           Expanded(

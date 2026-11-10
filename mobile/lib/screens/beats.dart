@@ -130,7 +130,7 @@ class _BeatsScreenState extends State<BeatsScreen> {
 
     return RefreshIndicator(
       onRefresh: st.loadBeats,
-      child: ListView(padding: const EdgeInsets.all(14), physics: const AlwaysScrollableScrollPhysics(), children: [
+      child: ListView(padding: kPagePadding, physics: const AlwaysScrollableScrollPhysics(), children: [
         SectionCard(title: 'My beats', collapsible: false, children: [
           Text(
               all.isEmpty

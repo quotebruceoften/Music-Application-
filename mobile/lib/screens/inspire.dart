@@ -37,7 +37,7 @@ class _InspireScreenState extends State<InspireScreen> {
   Widget build(BuildContext context) {
     final st = widget.st;
     final ready = st.refs.where((r) => r.id != null).length;
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: kPagePadding, children: [
       SectionCard(title: 'Start from songs you love', collapsible: false, children: [
         const Note('Add songs or videos (TikToks, Reels, screen recordings). BeatMaker listens for their tempo, key, '
             'drum groove, chord movement, swing and tone, then blends them into a new beat. '

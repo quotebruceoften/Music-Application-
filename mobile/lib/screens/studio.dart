@@ -20,7 +20,7 @@ class StudioScreen extends StatelessWidget {
     final ch = st.changed;
     final bass = st.sub('bass'), chords = st.sub('chords'), melody = st.sub('melody'), mix = st.sub('mix');
 
-    return ListView(padding: const EdgeInsets.all(14), children: [
+    return ListView(padding: kPagePadding, children: [
       // ------------------------------------------------ drums
       SectionCard(title: 'Drums', subtitle: 'Tap squares to change the rhythm', initiallyExpanded: true, children: [
         const Note('Tap: empty → hit → soft hit. Tap the name for sound settings.'),

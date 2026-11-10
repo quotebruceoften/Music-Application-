@@ -25,3 +25,15 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Space Grotesk (SIL Open Font License, see assets/fonts/OFL.txt), bundled so it works offline
+  fonts:
+    - family: SpaceGrotesk
+      fonts:
+        - asset: assets/fonts/SpaceGrotesk-400.ttf
+          weight: 400
+        - asset: assets/fonts/SpaceGrotesk-500.ttf
+          weight: 500
+        - asset: assets/fonts/SpaceGrotesk-600.ttf
+          weight: 600
+        - asset: assets/fonts/SpaceGrotesk-700.ttf
+          weight: 700

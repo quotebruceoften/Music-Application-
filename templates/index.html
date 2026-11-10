@@ -99,6 +99,67 @@
   .star{background:none;border:0;font-size:20px;cursor:pointer;color:var(--dim)}
   .star.on{color:var(--acc)}
   @media (max-width:520px){.lane .name{width:58px}.drumopts{margin-left:0}.cell{font-size:8px}}
+
+  /* ---------- futuristic theme: deep space, glass panels, cyan → violet → magenta ---------- */
+  @font-face{font-family:"Space Grotesk";src:url(/fonts/SpaceGrotesk-400.ttf) format("truetype");font-weight:400}
+  @font-face{font-family:"Space Grotesk";src:url(/fonts/SpaceGrotesk-500.ttf) format("truetype");font-weight:500}
+  @font-face{font-family:"Space Grotesk";src:url(/fonts/SpaceGrotesk-600.ttf) format("truetype");font-weight:600}
+  @font-face{font-family:"Space Grotesk";src:url(/fonts/SpaceGrotesk-700.ttf) format("truetype");font-weight:700 800}
+  :root{--bg:#05050b;--card:rgba(17,17,34,.78);--line:#26263f;--text:#ededf7;--dim:#8e8faa;--acc:#2ee6ff;--acc2:#ff4d8d;--soft:#8b5cf6;--mag:#e649d8;
+        --grad:linear-gradient(90deg,#2ee6ff,#8b5cf6,#e649d8)}
+  html{background:var(--bg)}
+  body{font-family:"Space Grotesk",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:
+    radial-gradient(900px 600px at 0% 0%,rgba(139,92,246,.22),transparent 60%),
+    radial-gradient(800px 600px at 100% 45%,rgba(46,230,255,.13),transparent 60%),
+    radial-gradient(900px 700px at 20% 100%,rgba(230,73,216,.12),transparent 60%),var(--bg);background-attachment:fixed;min-height:100vh}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:linear-gradient(rgba(140,150,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(140,150,255,.05) 1px,transparent 1px);
+    background-size:36px 36px;-webkit-mask-image:linear-gradient(#000,transparent 85%);mask-image:linear-gradient(#000,transparent 85%)}
+  main{position:relative;z-index:1}
+  h1{font-size:30px;font-weight:700;letter-spacing:-1px}
+  h1 span{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .card{position:relative;background:linear-gradient(135deg,rgba(18,18,38,.9),rgba(11,11,24,.9));border:1px solid transparent;border-radius:22px;padding:18px;
+    margin-bottom:14px;box-shadow:0 10px 28px rgba(0,0,0,.35);backdrop-filter:blur(10px);
+    background-clip:padding-box}
+  .card::before{content:"";position:absolute;inset:-1px;border-radius:23px;padding:1px;pointer-events:none;
+    background:linear-gradient(135deg,rgba(46,230,255,.4),rgba(139,92,246,.12),rgba(255,255,255,.05),rgba(230,73,216,.25));
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude}
+  details.card>summary{font-weight:700;font-size:16px;align-items:center}
+  details.card>summary::after{color:var(--acc)}
+  .chip{background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--text);transition:.15s}
+  .chip:hover{border-color:rgba(46,230,255,.5)}
+  .chip.on{background:rgba(139,92,246,.22);color:#fff;border-color:rgba(139,92,246,.7);box-shadow:0 0 14px rgba(139,92,246,.35)}
+  label.ctl .v{color:var(--acc);background:rgba(46,230,255,.08);border:1px solid rgba(46,230,255,.22);border-radius:7px;padding:0 6px;font-size:12px}
+  select,input[type=text],input[type=number]{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:12px;padding:10px 12px;transition:border-color .15s}
+  select:focus,input[type=text]:focus,input[type=number]:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(46,230,255,.12)}
+  input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:9px;background:#1d1d36;margin:10px 0}
+  input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:9px;background:var(--grad)}
+  input[type=range]::-moz-range-track{height:5px;border-radius:9px;background:#1d1d36}
+  input[type=range]::-moz-range-progress{height:5px;border-radius:9px;background:var(--grad)}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;margin-top:-6.5px;border-radius:50%;background:#fff;border:2px solid var(--soft);box-shadow:0 0 12px rgba(46,230,255,.6)}
+  input[type=range]::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid var(--soft);box-shadow:0 0 12px rgba(46,230,255,.6)}
+  .check input,table.matrix input{accent-color:var(--soft)}
+  .big{background:var(--grad);color:#fff;border-radius:18px;font-weight:700;letter-spacing:.3px;box-shadow:0 8px 26px rgba(139,92,246,.45),-6px 0 16px rgba(46,230,255,.18);transition:transform .12s,box-shadow .2s}
+  .big:hover{transform:translateY(-1px);box-shadow:0 10px 32px rgba(139,92,246,.6),-6px 0 18px rgba(46,230,255,.25)}
+  .btn{background:rgba(255,255,255,.04);border:1px solid #34345a;border-radius:999px;padding:8px 14px;transition:.15s}
+  .btn:hover{border-color:var(--acc);box-shadow:0 0 12px rgba(46,230,255,.2)}
+  .cell{background:#13132a;border:1px solid var(--line);border-radius:6px;transition:.12s}
+  .cell:nth-child(4n+1){background:#1c1c36;border-color:#2e2e55}
+  .cell.x{background:var(--acc);border-color:transparent;box-shadow:0 0 10px rgba(46,230,255,.55)}
+  .cell.o{background:rgba(46,230,255,.55);border-color:transparent}
+  .cell.f{background:var(--soft);box-shadow:0 0 10px rgba(139,92,246,.55)} .cell.u{background:var(--mag);color:#fff;box-shadow:0 0 10px rgba(230,73,216,.5)}
+  .lane .name button.m{background:var(--acc2);border-color:var(--acc2)}
+  .dl a,.beat .more a,.beat .more button{color:var(--acc)}
+  #status{color:var(--acc)}
+  .bar{background:#181830;border-radius:99px}
+  .bar i{background:var(--grad);border-radius:99px;box-shadow:0 0 12px rgba(139,92,246,.6)}
+  audio{filter:invert(.92) hue-rotate(180deg) saturate(1.4);border-radius:12px}
+  #toast{background:rgba(21,21,40,.95);color:var(--text);border:1px solid rgba(46,230,255,.35);backdrop-filter:blur(12px)}
+  #toast button{color:var(--acc)}
+  .star.on{color:var(--acc);text-shadow:0 0 10px rgba(46,230,255,.6)}
+  .beat{border-bottom:1px solid var(--line)}
+  .beat.cur .t::after{color:var(--acc)}
+  ::selection{background:rgba(139,92,246,.45)}
 </style>
 </head>
 <body>
@@ -161,12 +222,12 @@
   </details>
 
   <details class="card" id="drumsCard"><summary>Drums <small>tap squares to change the rhythm</small></summary>
-    <div class="legend">Tap a square: empty → <b style="color:var(--acc)">hit</b> → <b style="color:#a87a33">soft hit</b>. ⚙ opens the sound settings.</div>
+    <div class="legend">Tap a square: empty → <b style="color:var(--acc)">hit</b> → <b style="color:rgba(46,230,255,.6)">soft hit</b>. ⚙ opens the sound settings.</div>
     <div id="drums"></div>
   </details>
 
   <details class="card"><summary>Bass</summary>
-    <div class="legend">Tap: empty → hit → soft → <b style="color:var(--soft)">5</b> (fifth) → <b style="color:#45c4a0">^</b> (octave up). The bass follows your chords automatically.</div>
+    <div class="legend">Tap: empty → hit → soft → <b style="color:var(--soft)">5</b> (fifth) → <b style="color:var(--mag)">^</b> (octave up). The bass follows your chords automatically.</div>
     <div class="lane"><div class="name">Bass</div><div class="grid" id="bassGrid"></div></div>
     <div class="row" id="bass"></div>
   </details>

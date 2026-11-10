@@ -47,6 +47,14 @@ def _web(d):
     return out
 
 
+FONTS = os.path.join(BASE, "mobile", "assets", "fonts")
+
+
+@app.get("/fonts/<name>")
+def font(name):  # the app's bundled Space Grotesk, so the page looks the same offline
+    return send_from_directory(FONTS, os.path.basename(name), max_age=86400)
+
+
 @app.get("/")
 def index():
     return render_template("index.html")
