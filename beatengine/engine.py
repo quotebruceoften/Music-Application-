@@ -117,6 +117,7 @@ def sanitize(settings):
     c["sound"] = c["sound"] if c.get("sound") in OPTIONS["chord_sounds"] else "piano"
     c["voicing"] = c["voicing"] if c.get("voicing") in theory.VOICINGS else "7th"
     c["octave"] = int(_num(c.get("octave"), 2, 6, 4))
+    c["low_cut"] = _num(c.get("low_cut"), 40, 400, 140)  # how much low-mid body the chords keep
     for k, lo, hi, dv in (("brightness", 0, 1, 0.5), ("volume", -40, 6, -9), ("stereo", 0, 1, 0.5),
                           ("reverb", 0, 1, 0.3), ("delay", 0, 1, 0)):
         c[k] = _num(c.get(k), lo, hi, dv)
@@ -156,7 +157,10 @@ def sanitize(settings):
     mx = s["mix"]
     for k, lo, hi, dv in (("reverb", 0, 1, 0.5), ("reverb_size", 0.5, 5, 2), ("delay", 0, 1, 0.5),
                           ("sidechain", 0, 1, 0.5), ("warmth", 0, 1, 0.25), ("width", 0, 2, 1.1),
-                          ("loudness", -20, -7, -14), ("air", 0, 1, 0.4), ("phone_bass", 0, 1, 0)):
+                          ("loudness", -20, -7, -14), ("air", 0, 1, 0.4), ("phone_bass", 0, 1, 0),
+                          # dark: rolls the top end off (warm, moody mixes); sweeps: intros and breaks
+                          # start muffled and open up into the next part
+                          ("dark", 0, 1, 0), ("sweeps", 0, 1, 0.5)):
         mx[k] = _num(mx.get(k), lo, hi, dv)
     return s
 
@@ -520,6 +524,32 @@ def _load_tag(path):
     return y.astype(np.float32)
 
 
+def apply_sweeps(mix, song, amount):
+    """Producer move: intros and breakdowns are low-passed (muffled, 'in the next room')
+    and the filter opens up over the last bars into the next part. In place on `mix`."""
+    n = len(mix)
+    cutoff = 350 + (1 - amount) * 2500  # more amount = more muffled
+    for i, sec in enumerate(song.sections):
+        if sec["name"] not in ("intro", "break"):
+            continue
+        a = int(sec["start"] * song.bar * SR)
+        b = min(n, int((sec["start"] + sec["bars"]) * song.bar * SR))
+        if b - a < SR:
+            continue
+        pad = int(0.25 * SR)
+        lo, hi = max(0, a - pad), min(n, b + pad)
+        wet = fx.filt(mix[lo:hi].copy(), "lowpass", cutoff, order=3)[a - lo: b - lo]
+        t = np.arange(b - a, dtype=np.float32) / SR
+        dur = (b - a) / SR
+        open_t = min(2 * song.bar, dur * 0.6)  # the sweep opens over the last two bars
+        e = np.clip((t - (dur - open_t)) / open_t, 0, 1) ** 2  # 0 = muffled, 1 = open
+        if sec["name"] == "break" and i > 0:  # breakdowns close quickly at the start
+            close = np.clip(t / (0.5 * song.bar), 0, 1)
+            e = np.maximum(e, 1 - close)
+        e = e[:, None]
+        mix[a:b] = wet * (1 - e) + mix[a:b] * e
+
+
 def tag_times(song, tag_len, places):
     """Start times (seconds) for the producer tag. `places` is a list from TAG_PLACES
     (an old single 'position' string also works). Tags never overlap each other."""
@@ -770,7 +800,7 @@ def render(settings, outdir, progress=None, tag_path=None, stems=True):
             y = synth.tone_note(cfg["sound"], round(theory.midi_to_hz(n), 3), round(dur, 3),
                                 round(cfg["brightness"], 2))
             _place(buf, y, t, v * 0.45 * fx.db(TONE_GAIN.get(cfg["sound"], 0)))
-        fx.filt(buf, "highpass", 140, inplace=True)
+        fx.filt(buf, "highpass", cfg.get("low_cut", 140), inplace=True)
         fx.filt(buf, "lowpass", _bright_lp(cfg["brightness"]), inplace=True)
         finish("chords", buf, cfg, width=cfg["stereo"], sidechain=cfg.get("sidechain"))
         midi_tracks["chords"] = (2, [(t, d, n, v) for t, n, d, v in ev])
@@ -855,6 +885,10 @@ def render(settings, outdir, progress=None, tag_path=None, stems=True):
         wet = None
     del_send = None
 
+    # ---- filter sweeps: intros and breakdowns sit muffled, then open into the next part
+    if mx.get("sweeps", 0) > 0:
+        apply_sweeps(mix, song, mx["sweeps"])
+
     # ---- producer tag (the beat ducks a little underneath it)
     tag_info = None
     if tag_path and os.path.exists(tag_path) and not s["tag"]["mute"] and s["tag"]["places"]:
@@ -875,7 +909,7 @@ def render(settings, outdir, progress=None, tag_path=None, stems=True):
     peak = np.max(np.abs(mix)) or 1.0
     mix *= np.float32(fx.db(-6) / peak)
     # the whole mix-bus chain runs block by block, in place: the mix becomes the master bus
-    bus = dsp.blocks(mix, lambda seg: fx.master_chain(seg, mx["warmth"], mx["air"], mx["width"]),
+    bus = dsp.blocks(mix, lambda seg: fx.master_chain(seg, mx["warmth"], mx["air"], mx["width"], mx.get("dark", 0)),
                      int(1.5 * SR), inplace=True)
     mix = None
     last = song.sections[-1]

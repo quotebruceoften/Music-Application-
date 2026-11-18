@@ -24,7 +24,7 @@ MAX_SECONDS = 210
 MAJOR = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
 MINOR = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
 
-GENRE_TEMPO = {"amapiano": 113, "trap": 140, "afrohouse": 122, "lofi": 85}
+GENRE_TEMPO = {"moody": 108, "amapiano": 113, "trap": 140, "afrohouse": 122, "lofi": 85}
 
 
 # ================================================================ loading
@@ -300,6 +300,8 @@ def _genre_scores(bpm, kick, hat, swing, energy):
         return np.exp(-0.5 * (best / width) ** 2)
 
     return {
+        # half-time rap/R&B: mid tempo, sparse hats, no four-on-the-floor, little swing
+        "moody": tempo_fit(108, 7) * 1.0 + 0.6 * (1 - hat_busy) + 0.3 * (1 - four_floor) - 0.3 * swing,
         "amapiano": tempo_fit(113, 5) * 1.0 + 0.4 * hat_busy + 0.2 * swing,
         "trap": tempo_fit(140, 10) * 1.0 + 0.4 * hat_busy + 0.4 * (1 - four_floor),
         "afrohouse": tempo_fit(122, 4) * 1.0 + 0.9 * four_floor,

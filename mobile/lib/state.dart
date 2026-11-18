@@ -119,7 +119,7 @@ class AppState extends ChangeNotifier {
       if (saved != null) {
         s = (await engine.post('/api/sanitize', jsonDecode(saved)) as Map).cast<String, dynamic>();
       } else {
-        s = (await engine.get('/api/preset/amapiano') as Map).cast<String, dynamic>();
+        s = (await engine.get('/api/preset/moody') as Map).cast<String, dynamic>();
       }
       final savedRefs = _prefs!.getString('refs');
       if (savedRefs != null) {

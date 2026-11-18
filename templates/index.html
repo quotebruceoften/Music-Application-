@@ -459,6 +459,8 @@ function build() {
   X.append(slider("Reverb amount", S.mix, "reverb", 0, 1, 0.05, pct), slider("Room size", S.mix, "reverb_size", 0.5, 5, 0.1, v => v.toFixed(1) + " s"),
     slider("Echo amount", S.mix, "delay", 0, 1, 0.05, pct), slider("Pump (sidechain)", S.mix, "sidechain", 0, 1, 0.05, pct),
     slider("Warmth", S.mix, "warmth", 0, 1, 0.05, pct), slider("Air (sparkle)", S.mix, "air", 0, 1, 0.05, pct),
+    slider("Darkness", S.mix, "dark", 0, 1, 0.05, pct), slider("Filter sweeps", S.mix, "sweeps", 0, 1, 0.05, pct),
+    slider("Chord body (Hz)", S.chords, "low_cut", 40, 300, 10, v => Math.round(v) + " Hz"),
     slider("Stereo width", S.mix, "width", 0, 2, 0.05, v => Math.round(v * 100) + "%"),
     slider("Loudness target", S.mix, "loudness", -20, -7, 0.5, v => v + " LUFS"),
     slider("Phone-speaker bass", S.mix, "phone_bass", 0, 1, 0.05, pct),
@@ -862,7 +864,7 @@ async function openBeat(b) {
 (async () => {
   O = await (await fetch("/api/options")).json();
   const saved = store.get("beatmaker.settings");
-  if (saved && saved.genre) S = await clean(saved); else S = await (await fetch("/api/preset/amapiano")).json();
+  if (saved && saved.genre) S = await clean(saved); else S = await (await fetch("/api/preset/moody")).json();
   build();
   try { V = await (await fetch("/api/tags/voices")).json(); } catch (e) {}
   buildTag();

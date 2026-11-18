@@ -126,8 +126,8 @@ def saturate(x, amount):
     return wet
 
 
-def master_chain(x, warmth, air, width):
-    """Mix-bus processing before the limiter: clean-up, glue, warmth, air and width."""
+def master_chain(x, warmth, air, width, dark=0.0):
+    """Mix-bus processing before the limiter: clean-up, glue, warmth, air/darkness and width."""
     y = filt(x, "highpass", 28)
     y = compressor(y, threshold_db=-16, ratio=2.0)
     y = saturate(y, warmth * 0.6)
@@ -137,6 +137,13 @@ def master_chain(x, warmth, air, width):
         a = filt(y, "highpass", 7000)
         a *= np.float32(db(air * 5) - 1)
         y += a
+    if dark > 0:  # high-shelf cut: the warm, rolled-off top of moody R&B and rap mixes
+        h = filt(y, "highpass", 2800, order=1)
+        h *= np.float32(1 - db(-dark * 10))
+        y -= h
+        h = filt(y, "highpass", 9000, order=2)
+        h *= np.float32(1 - db(-dark * 8))
+        y -= h
     return stereo_width(y, width)
 
 

@@ -49,6 +49,45 @@ BASE_MIX = {"reverb": 0.5, "reverb_size": 2.0, "delay": 0.5, "sidechain": 0.5,
             "warmth": 0.25, "width": 1.15, "loudness": -14.0, "air": 0.5}
 
 GENRES = {
+    # Moody rap / R&B: dark, warm and spacious. Half-time drums with lots of room, a deep
+    # long 808, slow wide pads and sparse soft keys. Intros and breaks sit muffled, then
+    # the filter opens into the drop.
+    "moody": {
+        "label": "Moody Rap",
+        "bpm": 108, "key": "A", "scale": "major", "swing": 0.12, "energy": 0.55,
+        "humanize": 0.45, "seed": 31,
+        "progression": [4, 1, 6, 5], "chord_bars": 2,
+        "arrangement": [["intro", 4], ["verse", 8], ["hook", 8], ["break", 4],
+                        ["verse", 8], ["hook", 8], ["outro", 4]],
+        "drums": {
+            "kick": _drum("x.......o.....x.", -6, "punchy", decay=0.8),
+            "snare": _drum("........x.......", -6, "fat", decay=1.3, reverb=0.35),
+            "clap": _drum("........x.......", -13, reverb=0.4),
+            "hat": _drum("....x.......x...", -17, decay=0.8, pan=0.2),
+            "openhat": _drum("..............x.", -22, pan=-0.25, reverb=0.3),
+            "shaker": _drum("................", -20, mute=True),
+            "perc": _drum("...........x....", -17, "rim", pan=0.3, reverb=0.45),
+        },
+        "bass": {"sound": "808", "pattern": "x.......o.....x.", "volume": -7.0,
+                 "octave": 1, "decay": 1.8, "glide": 0.35, "mute": False, "sidechain": False},
+        "chords": {"sound": "pad", "pattern": "x...............", "voicing": "9th",
+                   "octave": 3, "brightness": 0.36, "volume": -6.5, "stereo": 0.6,
+                   "reverb": 0.55, "delay": 0.0, "mute": False, "sidechain": False, "low_cut": 90},
+        "melody": {"sound": "piano", "density": 0.22, "octave": 5, "volume": -7.5,
+                   "brightness": 0.3, "reverb": 0.55, "delay": 0.4, "mute": False,
+                   "sidechain": False, "seed": 8},
+        "fx": {"risers": False, "impacts": True, "volume": -17.0, "mute": False},
+        "texture": {"sound": "none", "volume": -28.0, "mute": False},
+        "mix": dict(BASE_MIX, reverb=0.65, reverb_size=3.2, delay=0.45, sidechain=0.1, warmth=0.45,
+                    width=1.1, loudness=-11.5, air=0.0, dark=0.45, sweeps=0.85),
+        "sections": {
+            "intro": ["chords", "melody", "fx"],
+            "verse": ["kick", "snare", "clap", "perc", "hat", "bass", "chords", "fx"],
+            "hook": ["kick", "snare", "clap", "hat", "openhat", "perc", "bass", "chords", "melody", "fx"],
+            "break": ["chords", "melody", "fx"],
+            "outro": ["chords", "melody", "fx"],
+        },
+    },
     "amapiano": {
         "label": "Amapiano",
         "bpm": 113, "key": "F", "scale": "minor", "swing": 0.3, "energy": 0.6,
