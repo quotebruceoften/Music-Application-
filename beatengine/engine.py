@@ -11,7 +11,7 @@ from . import wavio as wavfile
 import shutil
 import subprocess
 from .midi import GM_DRUMS, write_midi
-from .presets import (DRUMS, GENRES, OPTIONS, SECTION_TYPES, TRACKS, get_preset)
+from .presets import (ALIASES, DRUMS, GENRES, OPTIONS, SECTION_TYPES, TRACKS, get_preset)
 
 SR = synth.SR
 HIT_CHARS = set("xo")
@@ -63,6 +63,9 @@ def parse_progression(p):
 
 def sanitize(settings):
     settings = settings or {}
+    settings = dict(settings)
+    if settings.get("genre") in ALIASES:
+        settings["genre"] = ALIASES[settings["genre"]]
     s = _merge(get_preset(settings.get("genre", "amapiano")), settings)
     if s.get("genre") not in GENRES:
         s["genre"] = "amapiano"

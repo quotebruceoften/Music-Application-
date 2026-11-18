@@ -49,11 +49,11 @@ BASE_MIX = {"reverb": 0.5, "reverb_size": 2.0, "delay": 0.5, "sidechain": 0.5,
             "warmth": 0.25, "width": 1.15, "loudness": -14.0, "air": 0.5}
 
 GENRES = {
-    # Moody rap / R&B: dark, warm and spacious. Half-time drums with lots of room, a deep
-    # long 808, slow wide pads and sparse soft keys. Intros and breaks sit muffled, then
-    # the filter opens into the drop.
-    "moody": {
-        "label": "Moody Rap",
+    # Hip hop (modern, moody): dark, warm and spacious. Half-time drums with lots of room,
+    # a deep long 808, slow wide pads and sparse soft keys. Intros and breaks sit muffled,
+    # then the filter opens into the drop.
+    "hiphop": {
+        "label": "Hip Hop",
         "bpm": 108, "key": "A", "scale": "major", "swing": 0.12, "energy": 0.55,
         "humanize": 0.45, "seed": 31,
         "progression": [4, 1, 6, 5], "chord_bars": 2,
@@ -207,7 +207,11 @@ GENRES = {
 }
 
 
+ALIASES = {"moody": "hiphop"}  # earlier name of the hip hop style
+
+
 def get_preset(genre):
+    genre = ALIASES.get(genre, genre)
     g = GENRES.get(genre, GENRES["amapiano"])
     p = copy.deepcopy(g)
     p["genre"] = genre if genre in GENRES else "amapiano"

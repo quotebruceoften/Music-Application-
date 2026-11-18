@@ -864,7 +864,7 @@ async function openBeat(b) {
 (async () => {
   O = await (await fetch("/api/options")).json();
   const saved = store.get("beatmaker.settings");
-  if (saved && saved.genre) S = await clean(saved); else S = await (await fetch("/api/preset/moody")).json();
+  if (saved && saved.genre) S = await clean(saved); else S = await (await fetch("/api/preset/hiphop")).json();
   build();
   try { V = await (await fetch("/api/tags/voices")).json(); } catch (e) {}
   buildTag();
