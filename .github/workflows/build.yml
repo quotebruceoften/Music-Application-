@@ -41,6 +41,8 @@ jobs:
     name: Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write # to publish the phone APK as a release (a direct download link)
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -73,6 +75,28 @@ jobs:
         with:
           name: BeatMaker-Android
           path: mobile/build/app/outputs/flutter-apk/*.apk
+      # Each build is published as a release with just the phone APK attached, so the newest
+      # version is always one file on one fixed link (no zip):
+      #   https://github.com/<owner>/<repo>/releases/latest/download/BeatMaker-arm64-v8a.apk
+      # Nothing is deleted; older releases stay on the Releases page.
+      - name: Publish the phone APK (direct download link)
+        if: env.ALLOW_LINKS == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk BeatMaker-arm64-v8a.apk
+          tag="android-build-${GITHUB_RUN_NUMBER}"
+          {
+            echo "BeatMaker for Android phones (arm64-v8a, fits almost every modern phone)."
+            echo
+            echo "Install BeatMaker-arm64-v8a.apk over your current app; your beats, tags and settings are kept."
+            echo
+            echo "What changed: $(git log -1 --format=%s)"
+            echo "Build: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > notes.md
+          gh release create "$tag" BeatMaker-arm64-v8a.apk --target "$GITHUB_SHA" \
+            --title "BeatMaker build ${GITHUB_RUN_NUMBER}" --notes-file notes.md --latest
+          echo "Download: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/latest/download/BeatMaker-arm64-v8a.apk" >> "$GITHUB_STEP_SUMMARY"
 
   ios:
     name: iOS (unsigned)
