@@ -93,7 +93,44 @@ def legacy_packaging(kts):
     return fn
 
 
+# Release signing: every build must be signed with the same key, or Android refuses to
+# install an update over the app ("App not installed"). The workflow writes
+# android/key.properties when the signing secrets are set; without it the build falls
+# back to Flutter's throwaway debug key (fine for a first install, not for updates).
+SIGNING_IMPORT = "import java.util.Properties\n\n"  # imports may precede plugins {}; nothing else may
+SIGNING_LOAD = """val beatmakerKeys = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+"""
+SIGNING_CONFIG = """    signingConfigs {
+        create("beatmaker") {
+            if (beatmakerKeys.isNotEmpty()) {
+                storeFile = file(beatmakerKeys.getProperty("storeFile"))
+                storePassword = beatmakerKeys.getProperty("storePassword")
+                keyAlias = beatmakerKeys.getProperty("keyAlias")
+                keyPassword = beatmakerKeys.getProperty("keyPassword")
+            }
+        }
+    }
+
+"""
+
+
+def release_signing(s):
+    if "beatmakerKeys" in s:
+        return s
+    s = SIGNING_IMPORT + s
+    s = s.replace("\nandroid {", "\n" + SIGNING_LOAD + "android {", 1)
+    s = s.replace("    buildTypes {", SIGNING_CONFIG + "    buildTypes {", 1)
+    return re.sub(r'signingConfig = signingConfigs\.getByName\("debug"\)',
+                  'signingConfig = if (beatmakerKeys.isNotEmpty()) signingConfigs.getByName("beatmaker") '
+                  'else signingConfigs.getByName("debug")', s, count=1)
+
+
 edit("android/app/build.gradle.kts", gradle)
+edit("android/app/build.gradle.kts", release_signing)
 edit("android/app/build.gradle", gradle)
 # serious_python 6 loads Python's native modules straight from the APK, so native libs no
 # longer need extracting at install (legacy_packaging is kept for older serious_python).

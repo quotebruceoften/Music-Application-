@@ -68,9 +68,29 @@ jobs:
         run: flutter pub get
       - name: Bundle the beat engine (Python + NumPy)
         run: bash tool/prepare_python.sh Android
+      # Sign every build with the same key so new versions install over the old one.
+      # Secrets (Settings > Secrets and variables > Actions): ANDROID_KEYSTORE_BASE64 (the
+      # keystore file, base64) and ANDROID_KEYSTORE_PASSWORD. Without them the build uses
+      # Flutter's throwaway debug key, which can't update an installed app.
+      - name: Signing key
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::warning::No signing secrets set: this APK can't update an installed BeatMaker (uninstall first). See the comment above this step."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/beatmaker-release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=beatmaker\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/beatmaker-release.jks" "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > mobile/android/key.properties
+          echo "signed=true" >> "$GITHUB_OUTPUT"
       - name: Build APKs
         working-directory: mobile
-        run: flutter build apk --release --split-per-abi --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
+        # the build number rises every run, so Android sees each one as an update
+        run: flutter build apk --release --split-per-abi --build-number=${{ github.run_number }} --dart-define=ALLOW_LINKS=${{ env.ALLOW_LINKS }}
       - uses: actions/upload-artifact@v6
         with:
           name: BeatMaker-Android
@@ -80,7 +100,8 @@ jobs:
       #   https://github.com/<owner>/<repo>/releases/latest/download/BeatMaker-arm64-v8a.apk
       # Nothing is deleted; older releases stay on the Releases page.
       - name: Publish the phone APK (direct download link)
-        if: env.ALLOW_LINKS == 'true'
+        # only builds signed with the fixed key, so everything on the link installs as an update
+        if: env.ALLOW_LINKS == 'true' && steps.signing.outputs.signed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

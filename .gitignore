@@ -8,3 +8,4 @@ mobile/python/beatengine/
 mobile/python/server.py
 mobile/.flutter-plugins*
 mobile/pubspec.lock
+mobile/android/key.properties
